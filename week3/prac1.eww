@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<workspace>
+    <project>
+        <path>$WS_DIR$\..\..\Documents\prac1.ewp</path>
+    </project>
+    <project>
+        <path>$WS_DIR$\..\..\..\..\IAR_EW_project\project_test\test.ewp</path>
+    </project>
+    <project>
+        <path>$WS_DIR$\..\IAR_week3_10\project_test\test.ewp</path>
+    </project>
+    <project>
+        <path>$WS_DIR$\test.ewp</path>
+    </project>
+    <batchBuild />
+</workspace>
