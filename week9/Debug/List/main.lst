@@ -1,0 +1,543 @@
+###############################################################################
+#
+# IAR ANSI C/C++ Compiler V8.22.1.15669/W32 for ARM       30/Oct/2024  22:07:01
+# Copyright 1999-2018 IAR Systems AB.
+#
+#    Cpu mode     =  thumb
+#    Endian       =  little
+#    Source file  =  C:\Users\pnu10\Desktop\week6\user\main.c
+#    Command line =  
+#        -f C:\Users\pnu10\AppData\Local\Temp\EWEFCA.tmp
+#        (C:\Users\pnu10\Desktop\week6\user\main.c -D USE_STDPERIPH_DRIVER -D
+#        STM32F10X_CL -lC C:\Users\pnu10\Desktop\week6\Debug\List -o
+#        C:\Users\pnu10\Desktop\week6\Debug\Obj --no_cse --no_unroll
+#        --no_inline --no_code_motion --no_tbaa --no_clustering --no_scheduling
+#        --debug --endian=little --cpu=Cortex-M3 -e --fpu=None --dlib_config
+#        "C:\Program Files (x86)\IAR Systems\Embedded Workbench
+#        8.0\arm\INC\c\DLib_Config_Normal.h" -I
+#        C:\Users\pnu10\Desktop\week6\libraries\CMSIS\DeviceSupport\ -I
+#        C:\Users\pnu10\Desktop\week6\libraries\CMSIS\DeviceSupport\Startup\ -I
+#        C:\Users\pnu10\Desktop\week6\libraries\STM32F10x_StdPeriph_Driver_v3.5\inc\
+#        -I
+#        C:\Users\pnu10\Desktop\week6\libraries\STM32F10x_StdPeriph_Driver_v3.5\src\
+#        -I C:\Users\pnu10\Desktop\week6\user\ -I
+#        C:\Users\pnu10\Desktop\week6\user\inc\ -Ol -I "C:\Program Files
+#        (x86)\IAR Systems\Embedded Workbench 8.0\arm\CMSIS\Core\Include\" -I
+#        "C:\Program Files (x86)\IAR Systems\Embedded Workbench
+#        8.0\arm\CMSIS\DSP\Include\")
+#    Locale       =  C
+#    List file    =  C:\Users\pnu10\Desktop\week6\Debug\List\main.lst
+#    Object file  =  C:\Users\pnu10\Desktop\week6\Debug\Obj\main.o
+#
+###############################################################################
+
+C:\Users\pnu10\Desktop\week6\user\main.c
+      1          
+      2          #include "stm32f10x.h"
+
+   \                                 In section .text, align 2, keep-with-next
+   \   static __interwork __softfp void __NVIC_EnableIRQ(IRQn_Type)
+   \                     __NVIC_EnableIRQ: (+1)
+   \   00000000   0x0001             MOVS     R1,R0
+   \   00000002   0xB249             SXTB     R1,R1            ;; SignExt  R1,R1,#+24,#+24
+   \   00000004   0x2900             CMP      R1,#+0
+   \   00000006   0xD408             BMI.N    ??__NVIC_EnableIRQ_0
+   \   00000008   0x2201             MOVS     R2,#+1
+   \   0000000A   0xF010 0x011F      ANDS     R1,R0,#0x1F
+   \   0000000E   0x408A             LSLS     R2,R2,R1
+   \   00000010   0x....             LDR.N    R1,??DataTable6  ;; 0xe000e100
+   \   00000012   0xB240             SXTB     R0,R0            ;; SignExt  R0,R0,#+24,#+24
+   \   00000014   0x0940             LSRS     R0,R0,#+5
+   \   00000016   0xF841 0x2020      STR      R2,[R1, R0, LSL #+2]
+   \                     ??__NVIC_EnableIRQ_0: (+1)
+   \   0000001A   0x4770             BX       LR               ;; return
+      3          #include "stm32f10x_exti.h"
+      4          #include "stm32f10x_gpio.h"
+      5          #include "stm32f10x_usart.h"
+      6          #include "stm32f10x_rcc.h"
+      7          
+      8          #include "misc.h"
+      9          
+     10          /* function prototype */
+     11          void RCC_Configure(void);
+     12          void GPIO_Configure(void);
+     13          void USART1_Init(void);
+     14          void USART2_Init(void);
+     15          void NVIC_Configure(void);
+     16          
+
+   \                                 In section .text, align 2, keep-with-next
+     17          void RCC_Configure(void)
+     18          {  
+   \                     RCC_Configure: (+1)
+   \   00000000   0xB580             PUSH     {R7,LR}
+     19              // TODO: Enable the APB2 peripheral clock using the function 'RCC_APB2PeriphClockCmd'
+     20            
+     21          	/* USART1, USART2 TX/RX port clock enable */
+     22                  RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
+   \   00000002   0x2101             MOVS     R1,#+1
+   \   00000004   0x2004             MOVS     R0,#+4
+   \   00000006   0x.... 0x....      BL       RCC_APB2PeriphClockCmd
+     23                  RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOD, ENABLE);
+   \   0000000A   0x2101             MOVS     R1,#+1
+   \   0000000C   0x2020             MOVS     R0,#+32
+   \   0000000E   0x.... 0x....      BL       RCC_APB2PeriphClockCmd
+     24          	/* USART1, USART2 clock enable */
+     25          	RCC_APB2PeriphClockCmd(RCC_APB2Periph_AFIO, ENABLE); //EXTI?@@???@@?
+   \   00000012   0x2101             MOVS     R1,#+1
+   \   00000014   0x2001             MOVS     R0,#+1
+   \   00000016   0x.... 0x....      BL       RCC_APB2PeriphClockCmd
+     26                  RCC_APB2PeriphClockCmd(RCC_APB2Periph_USART1, ENABLE); // USART 1 ?@@?
+   \   0000001A   0x2101             MOVS     R1,#+1
+   \   0000001C   0xF44F 0x4080      MOV      R0,#+16384
+   \   00000020   0x.... 0x....      BL       RCC_APB2PeriphClockCmd
+     27                  RCC_APB2PeriphClockCmd(RCC_APB1Periph_USART2, ENABLE); // USART 2 ?@@?
+   \   00000024   0x2101             MOVS     R1,#+1
+   \   00000026   0xF45F 0x3000      MOVS     R0,#+131072
+   \   0000002A   0x.... 0x....      BL       RCC_APB2PeriphClockCmd
+     28          	/* Alternate Function IO clock enable */
+     29              RCC_APB2PeriphClockCmd(RCC_APB2Periph_AFIO, ENABLE);
+   \   0000002E   0x2101             MOVS     R1,#+1
+   \   00000030   0x2001             MOVS     R0,#+1
+   \   00000032   0x.... 0x....      BL       RCC_APB2PeriphClockCmd
+     30          }
+   \   00000036   0xBD01             POP      {R0,PC}          ;; return
+     31          
+
+   \                                 In section .text, align 2, keep-with-next
+     32          void GPIO_Configure(void)
+     33          {
+   \                     GPIO_Configure: (+1)
+   \   00000000   0xB580             PUSH     {R7,LR}
+     34              GPIO_InitTypeDef GPIO_InitStructure;
+     35              
+     36             	// TODO: Initialize the GPIO pins using the structure 'GPIO_InitTypeDef' and the function 'GPIO_Init'
+     37          
+     38              /* USART1 pin setting */
+     39              //USART 1 TX ??Pin9@??@@?@@ ?@@??@@@??
+     40              GPIO_InitStructure.GPIO_Pin = GPIO_Pin_9; 
+   \   00000002   0xF44F 0x7000      MOV      R0,#+512
+   \   00000006   0xF8AD 0x0000      STRH     R0,[SP, #+0]
+     41              GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+   \   0000000A   0x2003             MOVS     R0,#+3
+   \   0000000C   0xF88D 0x0002      STRB     R0,[SP, #+2]
+     42              GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP;
+   \   00000010   0x2018             MOVS     R0,#+24
+   \   00000012   0xF88D 0x0003      STRB     R0,[SP, #+3]
+     43              GPIO_Init(GPIOA, &GPIO_InitStructure);
+   \   00000016   0x4669             MOV      R1,SP
+   \   00000018   0x....             LDR.N    R0,??DataTable6_1  ;; 0x40010800
+   \   0000001A   0x.... 0x....      BL       GPIO_Init
+     44              //USART 1 RX ??Pin10???@@?@@ ?@@??@@@??
+     45              GPIO_InitStructure.GPIO_Pin = GPIO_Pin_10;
+   \   0000001E   0xF44F 0x6080      MOV      R0,#+1024
+   \   00000022   0xF8AD 0x0000      STRH     R0,[SP, #+0]
+     46              GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+   \   00000026   0x2003             MOVS     R0,#+3
+   \   00000028   0xF88D 0x0002      STRB     R0,[SP, #+2]
+     47              GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN_FLOATING;
+   \   0000002C   0x2004             MOVS     R0,#+4
+   \   0000002E   0xF88D 0x0003      STRB     R0,[SP, #+3]
+     48              GPIO_Init(GPIOA, &GPIO_InitStructure);
+   \   00000032   0x4669             MOV      R1,SP
+   \   00000034   0x....             LDR.N    R0,??DataTable6_1  ;; 0x40010800
+   \   00000036   0x.... 0x....      BL       GPIO_Init
+     49              /* USART2 pin setting */
+     50              // USART 2 TX ??Pin2@??@@?@@ ?@@?@@.
+     51              GPIO_InitStructure.GPIO_Pin = GPIO_Pin_2;
+   \   0000003A   0x2004             MOVS     R0,#+4
+   \   0000003C   0xF8AD 0x0000      STRH     R0,[SP, #+0]
+     52              GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+   \   00000040   0x2003             MOVS     R0,#+3
+   \   00000042   0xF88D 0x0002      STRB     R0,[SP, #+2]
+     53              GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP;
+   \   00000046   0x2018             MOVS     R0,#+24
+   \   00000048   0xF88D 0x0003      STRB     R0,[SP, #+3]
+     54              GPIO_Init(GPIOA, &GPIO_InitStructure);
+   \   0000004C   0x4669             MOV      R1,SP
+   \   0000004E   0x....             LDR.N    R0,??DataTable6_1  ;; 0x40010800
+   \   00000050   0x.... 0x....      BL       GPIO_Init
+     55          	//USART 2 RX ??Pin3???@@?@@ ?@@?@@.
+     56              GPIO_InitStructure.GPIO_Pin = GPIO_Pin_3;
+   \   00000054   0x2008             MOVS     R0,#+8
+   \   00000056   0xF8AD 0x0000      STRH     R0,[SP, #+0]
+     57              GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+   \   0000005A   0x2003             MOVS     R0,#+3
+   \   0000005C   0xF88D 0x0002      STRB     R0,[SP, #+2]
+     58              GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN_FLOATING;
+   \   00000060   0x2004             MOVS     R0,#+4
+   \   00000062   0xF88D 0x0003      STRB     R0,[SP, #+3]
+     59              GPIO_Init(GPIOA, &GPIO_InitStructure);
+   \   00000066   0x4669             MOV      R1,SP
+   \   00000068   0x....             LDR.N    R0,??DataTable6_1  ;; 0x40010800
+   \   0000006A   0x.... 0x....      BL       GPIO_Init
+     60          }
+   \   0000006E   0xBD01             POP      {R0,PC}          ;; return
+     61          
+
+   \                                 In section .text, align 2, keep-with-next
+     62          void USART1_Init(void)
+     63          {
+   \                     USART1_Init: (+1)
+   \   00000000   0xB5F8             PUSH     {R3-R7,LR}
+     64              USART_InitTypeDef USART1_InitStructure;
+     65          
+     66          	// Enable the USART1 peripheral
+     67          	USART_Cmd(USART1, ENABLE);
+   \   00000002   0x2101             MOVS     R1,#+1
+   \   00000004   0x....             LDR.N    R0,??DataTable6_2  ;; 0x40013800
+   \   00000006   0x.... 0x....      BL       USART_Cmd
+     68          	
+     69          	// TODO: Initialize the USART using the structure 'USART_InitTypeDef' and the function 'USART_Init'
+     70          	USART1_InitStructure.USART_BaudRate = 9600;
+   \   0000000A   0xF44F 0x5016      MOV      R0,#+9600
+   \   0000000E   0x9000             STR      R0,[SP, #+0]
+     71                  USART1_InitStructure.USART_WordLength = USART_WordLength_8b;
+   \   00000010   0x2000             MOVS     R0,#+0
+   \   00000012   0xF8AD 0x0004      STRH     R0,[SP, #+4]
+     72                  USART1_InitStructure.USART_StopBits = USART_StopBits_1;
+   \   00000016   0x2000             MOVS     R0,#+0
+   \   00000018   0xF8AD 0x0006      STRH     R0,[SP, #+6]
+     73                  USART1_InitStructure.USART_Parity = USART_Parity_No;
+   \   0000001C   0x2000             MOVS     R0,#+0
+   \   0000001E   0xF8AD 0x0008      STRH     R0,[SP, #+8]
+     74                  USART1_InitStructure.USART_Mode = USART_Mode_Rx | USART_Mode_Tx;
+   \   00000022   0x200C             MOVS     R0,#+12
+   \   00000024   0xF8AD 0x000A      STRH     R0,[SP, #+10]
+     75                  USART1_InitStructure.USART_HardwareFlowControl = USART_HardwareFlowControl_None;
+   \   00000028   0x2000             MOVS     R0,#+0
+   \   0000002A   0xF8AD 0x000C      STRH     R0,[SP, #+12]
+     76                  USART_Init(USART1, &USART1_InitStructure);
+   \   0000002E   0x4669             MOV      R1,SP
+   \   00000030   0x....             LDR.N    R0,??DataTable6_2  ;; 0x40013800
+   \   00000032   0x.... 0x....      BL       USART_Init
+     77          
+     78          	
+     79          	// TODO: Enable the USART1 RX interrupts using the function 'USART_ITConfig' and the argument value 'Receive Data register not empty interrupt'
+     80          	USART_ITConfig(USART1, USART_IT_RXNE, ENABLE);
+   \   00000036   0x2201             MOVS     R2,#+1
+   \   00000038   0xF240 0x5125      MOVW     R1,#+1317
+   \   0000003C   0x....             LDR.N    R0,??DataTable6_2  ;; 0x40013800
+   \   0000003E   0x.... 0x....      BL       USART_ITConfig
+     81          }
+   \   00000042   0xB005             ADD      SP,SP,#+20
+   \   00000044   0xBD00             POP      {PC}             ;; return
+     82          
+
+   \                                 In section .text, align 2, keep-with-next
+     83          void USART2_Init(void)
+     84          {
+   \                     USART2_Init: (+1)
+   \   00000000   0xB5F8             PUSH     {R3-R7,LR}
+     85              USART_InitTypeDef USART2_InitStructure;
+     86          
+     87          	// Enable the USART2 peripheral
+     88          	USART_Cmd(USART2, ENABLE);
+   \   00000002   0x2101             MOVS     R1,#+1
+   \   00000004   0x....             LDR.N    R0,??DataTable6_3  ;; 0x40004400
+   \   00000006   0x.... 0x....      BL       USART_Cmd
+     89          	
+     90          	// TODO: Initialize the USART using the structure 'USART_InitTypeDef' and the function 'USART_Init'
+     91                  USART2_InitStructure.USART_BaudRate = 9600;
+   \   0000000A   0xF44F 0x5016      MOV      R0,#+9600
+   \   0000000E   0x9000             STR      R0,[SP, #+0]
+     92                  USART2_InitStructure.USART_WordLength = USART_WordLength_8b;
+   \   00000010   0x2000             MOVS     R0,#+0
+   \   00000012   0xF8AD 0x0004      STRH     R0,[SP, #+4]
+     93                  USART2_InitStructure.USART_StopBits = USART_StopBits_1;
+   \   00000016   0x2000             MOVS     R0,#+0
+   \   00000018   0xF8AD 0x0006      STRH     R0,[SP, #+6]
+     94                  USART2_InitStructure.USART_Parity = USART_Parity_No;
+   \   0000001C   0x2000             MOVS     R0,#+0
+   \   0000001E   0xF8AD 0x0008      STRH     R0,[SP, #+8]
+     95                  USART2_InitStructure.USART_Mode = USART_Mode_Rx | USART_Mode_Tx;
+   \   00000022   0x200C             MOVS     R0,#+12
+   \   00000024   0xF8AD 0x000A      STRH     R0,[SP, #+10]
+     96                  USART2_InitStructure.USART_HardwareFlowControl = USART_HardwareFlowControl_None;
+   \   00000028   0x2000             MOVS     R0,#+0
+   \   0000002A   0xF8AD 0x000C      STRH     R0,[SP, #+12]
+     97                  USART_Init(USART2, &USART2_InitStructure);
+   \   0000002E   0x4669             MOV      R1,SP
+   \   00000030   0x....             LDR.N    R0,??DataTable6_3  ;; 0x40004400
+   \   00000032   0x.... 0x....      BL       USART_Init
+     98          	
+     99          	// TODO: Enable the USART2 RX interrupts using the function 'USART_ITConfig' and the argument value 'Receive Data register not empty interrupt'
+    100                  USART_ITConfig(USART1, USART_IT_RXNE, ENABLE);
+   \   00000036   0x2201             MOVS     R2,#+1
+   \   00000038   0xF240 0x5125      MOVW     R1,#+1317
+   \   0000003C   0x....             LDR.N    R0,??DataTable6_2  ;; 0x40013800
+   \   0000003E   0x.... 0x....      BL       USART_ITConfig
+    101          }
+   \   00000042   0xB005             ADD      SP,SP,#+20
+   \   00000044   0xBD00             POP      {PC}             ;; return
+    102          
+
+   \                                 In section .text, align 2, keep-with-next
+    103          void NVIC_Configure(void) {
+   \                     NVIC_Configure: (+1)
+   \   00000000   0xB580             PUSH     {R7,LR}
+    104          
+    105              NVIC_InitTypeDef NVIC_InitStructure;
+    106          	
+    107              // TODO: fill the arg you want
+    108              NVIC_PriorityGroupConfig(NVIC_PriorityGroup_0);
+   \   00000002   0xF44F 0x60E0      MOV      R0,#+1792
+   \   00000006   0x.... 0x....      BL       NVIC_PriorityGroupConfig
+    109          
+    110              // USART1
+    111              // 'NVIC_EnableIRQ' is only required for USART setting
+    112              NVIC_EnableIRQ(USART1_IRQn);
+   \   0000000A   0x2025             MOVS     R0,#+37
+   \   0000000C   0x.... 0x....      BL       __NVIC_EnableIRQ
+    113              NVIC_InitStructure.NVIC_IRQChannel = USART1_IRQn;
+   \   00000010   0x2025             MOVS     R0,#+37
+   \   00000012   0xF88D 0x0000      STRB     R0,[SP, #+0]
+    114              NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0x00; // TODO
+   \   00000016   0x2000             MOVS     R0,#+0
+   \   00000018   0xF88D 0x0001      STRB     R0,[SP, #+1]
+    115              NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0x00; // TODO
+   \   0000001C   0x2000             MOVS     R0,#+0
+   \   0000001E   0xF88D 0x0002      STRB     R0,[SP, #+2]
+    116              NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+   \   00000022   0x2001             MOVS     R0,#+1
+   \   00000024   0xF88D 0x0003      STRB     R0,[SP, #+3]
+    117              NVIC_Init(&NVIC_InitStructure);
+   \   00000028   0x4668             MOV      R0,SP
+   \   0000002A   0x.... 0x....      BL       NVIC_Init
+    118          
+    119              // USART2
+    120              // 'NVIC_EnableIRQ' is only required for USART setting
+    121              NVIC_EnableIRQ(USART2_IRQn);
+   \   0000002E   0x2026             MOVS     R0,#+38
+   \   00000030   0x.... 0x....      BL       __NVIC_EnableIRQ
+    122              NVIC_InitStructure.NVIC_IRQChannel = USART2_IRQn;
+   \   00000034   0x2026             MOVS     R0,#+38
+   \   00000036   0xF88D 0x0000      STRB     R0,[SP, #+0]
+    123              NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0x00; // TODO
+   \   0000003A   0x2000             MOVS     R0,#+0
+   \   0000003C   0xF88D 0x0001      STRB     R0,[SP, #+1]
+    124              NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0x00; // TODO
+   \   00000040   0x2000             MOVS     R0,#+0
+   \   00000042   0xF88D 0x0002      STRB     R0,[SP, #+2]
+    125              NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+   \   00000046   0x2001             MOVS     R0,#+1
+   \   00000048   0xF88D 0x0003      STRB     R0,[SP, #+3]
+    126              NVIC_Init(&NVIC_InitStructure);
+   \   0000004C   0x4668             MOV      R0,SP
+   \   0000004E   0x.... 0x....      BL       NVIC_Init
+    127          }
+   \   00000052   0xBD01             POP      {R0,PC}          ;; return
+    128          
+
+   \                                 In section .text, align 2, keep-with-next
+    129          void USART1_IRQHandler() {
+   \                     USART1_IRQHandler: (+1)
+   \   00000000   0xB580             PUSH     {R7,LR}
+    130              uint16_t word;
+    131              if(USART_GetITStatus(USART1,USART_IT_RXNE)!=RESET){
+   \   00000002   0xF240 0x5125      MOVW     R1,#+1317
+   \   00000006   0x....             LDR.N    R0,??DataTable6_2  ;; 0x40013800
+   \   00000008   0x.... 0x....      BL       USART_GetITStatus
+   \   0000000C   0x2800             CMP      R0,#+0
+   \   0000000E   0xD00C             BEQ.N    ??USART1_IRQHandler_0
+    132                  // the most recent received data by the USART1 peripheral
+    133                  word = USART_ReceiveData(USART1);
+   \   00000010   0x....             LDR.N    R0,??DataTable6_2  ;; 0x40013800
+   \   00000012   0x.... 0x....      BL       USART_ReceiveData
+   \   00000016   0x0001             MOVS     R1,R0
+    134          
+    135                  // TODO implement
+    136                    USART_SendData(USART2, word);       
+   \   00000018   0xB289             UXTH     R1,R1            ;; ZeroExt  R1,R1,#+16,#+16
+   \   0000001A   0x....             LDR.N    R0,??DataTable6_3  ;; 0x40004400
+   \   0000001C   0x.... 0x....      BL       USART_SendData
+    137                  // clear 'Read data register not empty' flag
+    138              	USART_ClearITPendingBit(USART1,USART_IT_RXNE);
+   \   00000020   0xF240 0x5125      MOVW     R1,#+1317
+   \   00000024   0x....             LDR.N    R0,??DataTable6_2  ;; 0x40013800
+   \   00000026   0x.... 0x....      BL       USART_ClearITPendingBit
+    139              }
+    140          }
+   \                     ??USART1_IRQHandler_0: (+1)
+   \   0000002A   0xBD01             POP      {R0,PC}          ;; return
+    141          
+
+   \                                 In section .text, align 2, keep-with-next
+    142          void USART2_IRQHandler() {
+   \                     USART2_IRQHandler: (+1)
+   \   00000000   0xB580             PUSH     {R7,LR}
+    143              uint16_t word;
+    144              if(USART_GetITStatus(USART2,USART_IT_RXNE)!=RESET){
+   \   00000002   0xF240 0x5125      MOVW     R1,#+1317
+   \   00000006   0x....             LDR.N    R0,??DataTable6_3  ;; 0x40004400
+   \   00000008   0x.... 0x....      BL       USART_GetITStatus
+   \   0000000C   0x2800             CMP      R0,#+0
+   \   0000000E   0xD00C             BEQ.N    ??USART2_IRQHandler_0
+    145                  // the most recent received data by the USART2 peripheral
+    146                  word = USART_ReceiveData(USART2);
+   \   00000010   0x....             LDR.N    R0,??DataTable6_3  ;; 0x40004400
+   \   00000012   0x.... 0x....      BL       USART_ReceiveData
+   \   00000016   0x0001             MOVS     R1,R0
+    147          
+    148                  // TODO implement
+    149                  USART_SendData(USART1, word);
+   \   00000018   0xB289             UXTH     R1,R1            ;; ZeroExt  R1,R1,#+16,#+16
+   \   0000001A   0x....             LDR.N    R0,??DataTable6_2  ;; 0x40013800
+   \   0000001C   0x.... 0x....      BL       USART_SendData
+    150          
+    151                  // clear 'Read data register not empty' flag
+    152              	USART_ClearITPendingBit(USART2,USART_IT_RXNE);
+   \   00000020   0xF240 0x5125      MOVW     R1,#+1317
+   \   00000024   0x....             LDR.N    R0,??DataTable6_3  ;; 0x40004400
+   \   00000026   0x.... 0x....      BL       USART_ClearITPendingBit
+    153              }
+    154          }
+   \                     ??USART2_IRQHandler_0: (+1)
+   \   0000002A   0xBD01             POP      {R0,PC}          ;; return
+    155          
+
+   \                                 In section .text, align 2, keep-with-next
+    156          int main(void)
+    157          {
+   \                     main: (+1)
+   \   00000000   0xB5E0             PUSH     {R5-R7,LR}
+    158            char msg[] = "abcde\r\n";
+   \   00000002   0x4668             MOV      R0,SP
+   \   00000004   0x....             LDR.N    R1,??DataTable6_4
+   \   00000006   0xE9D1 0x2300      LDRD     R2,R3,[R1, #+0]
+   \   0000000A   0xE9C0 0x2300      STRD     R2,R3,[R0, #+0]
+    159            unsigned int i;
+    160            
+    161              SystemInit();
+   \   0000000E   0x.... 0x....      BL       SystemInit
+    162          
+    163              RCC_Configure();
+   \   00000012   0x.... 0x....      BL       RCC_Configure
+    164          
+    165              GPIO_Configure();
+   \   00000016   0x.... 0x....      BL       GPIO_Configure
+    166          
+    167              USART1_Init();      // pc
+   \   0000001A   0x.... 0x....      BL       USART1_Init
+    168              
+    169              USART2_Init();      // bluetooth
+   \   0000001E   0x.... 0x....      BL       USART2_Init
+    170          
+    171              NVIC_Configure();
+   \   00000022   0x.... 0x....      BL       NVIC_Configure
+    172          
+    173              while (1) {
+   \                     ??main_0: (+1)
+   \   00000026   0xE7FE             B.N      ??main_0
+    174              }
+    175              return 0;
+                     ^
+Warning[Pe111]: statement is unreachable
+
+    char msg[] = "abcde\r\n";
+         ^
+"C:\Users\pnu10\Desktop\week6\user\main.c",158  Warning[Pe177]: variable "msg"
+          was declared but never referenced
+
+    unsigned int i;
+                 ^
+"C:\Users\pnu10\Desktop\week6\user\main.c",159  Warning[Pe177]: variable "i"
+          was declared but never referenced
+    176          }
+
+   \                                 In section .text, align 4, keep-with-next
+   \                     ??DataTable6:
+   \   00000000   0xE000E100         DC32     0xe000e100
+
+   \                                 In section .text, align 4, keep-with-next
+   \                     ??DataTable6_1:
+   \   00000000   0x40010800         DC32     0x40010800
+
+   \                                 In section .text, align 4, keep-with-next
+   \                     ??DataTable6_2:
+   \   00000000   0x40013800         DC32     0x40013800
+
+   \                                 In section .text, align 4, keep-with-next
+   \                     ??DataTable6_3:
+   \   00000000   0x40004400         DC32     0x40004400
+
+   \                                 In section .text, align 4, keep-with-next
+   \                     ??DataTable6_4:
+   \   00000000   0x........         DC32     ?_0
+
+   \                                 In section .rodata, align 4
+   \                     ?_0:
+   \   00000000   0x61 0x62          DC8 "abcde\015\012"
+   \              0x63 0x64    
+   \              0x65 0x0D    
+   \              0x0A 0x00    
+
+   Maximum stack usage in bytes:
+
+   .cstack Function
+   ------- --------
+       8   GPIO_Configure
+         8   -> GPIO_Init
+       8   NVIC_Configure
+         8   -> NVIC_Init
+         8   -> NVIC_PriorityGroupConfig
+         8   -> __NVIC_EnableIRQ
+       8   RCC_Configure
+         8   -> RCC_APB2PeriphClockCmd
+       8   USART1_IRQHandler
+         8   -> USART_ClearITPendingBit
+         8   -> USART_GetITStatus
+         8   -> USART_ReceiveData
+         8   -> USART_SendData
+      24   USART1_Init
+        24   -> USART_Cmd
+        24   -> USART_ITConfig
+        24   -> USART_Init
+       8   USART2_IRQHandler
+         8   -> USART_ClearITPendingBit
+         8   -> USART_GetITStatus
+         8   -> USART_ReceiveData
+         8   -> USART_SendData
+      24   USART2_Init
+        24   -> USART_Cmd
+        24   -> USART_ITConfig
+        24   -> USART_Init
+       0   __NVIC_EnableIRQ
+      16   main
+        16   -> GPIO_Configure
+        16   -> NVIC_Configure
+        16   -> RCC_Configure
+        16   -> SystemInit
+        16   -> USART1_Init
+        16   -> USART2_Init
+
+
+   Section sizes:
+
+   Bytes  Function/Label
+   -----  --------------
+       4  ??DataTable6
+       4  ??DataTable6_1
+       4  ??DataTable6_2
+       4  ??DataTable6_3
+       4  ??DataTable6_4
+       8  ?_0
+     112  GPIO_Configure
+      84  NVIC_Configure
+      56  RCC_Configure
+      44  USART1_IRQHandler
+      70  USART1_Init
+      44  USART2_IRQHandler
+      70  USART2_Init
+      28  __NVIC_EnableIRQ
+      40  main
+
+ 
+   8 bytes in section .rodata
+ 568 bytes in section .text
+ 
+ 568 bytes of CODE  memory
+   8 bytes of CONST memory
+
+Errors: none
+Warnings: 3
