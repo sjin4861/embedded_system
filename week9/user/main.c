@@ -47,16 +47,16 @@ void GPIO_Configure(void)
     GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN_FLOATING;
     GPIO_Init(GPIOA, &GPIO_InitStructure);
     /* USART2 pin setting */
-    // USART 2 TX 는 Pin2를 이용해서 연결한다.
-    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_2;
+    // USART 2 TX 는 Pin5를 이용해서 연결한다.
+    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_5;
     GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
     GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP;
-    GPIO_Init(GPIOA, &GPIO_InitStructure);
-	//USART 2 RX 는 Pin3을 이용해서 연결한다.
-    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_3;
+    GPIO_Init(GPIOD, &GPIO_InitStructure);
+	//USART 2 RX 는 Pin6을 이용해서 연결한다.
+    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_6;
     GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
     GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN_FLOATING;
-    GPIO_Init(GPIOA, &GPIO_InitStructure);
+    GPIO_Init(GPIOD, &GPIO_InitStructure);
 }
 
 void USART1_Init(void)
@@ -97,7 +97,7 @@ void USART2_Init(void)
         USART_Init(USART2, &USART2_InitStructure);
 	
 	// TODO: Enable the USART2 RX interrupts using the function 'USART_ITConfig' and the argument value 'Receive Data register not empty interrupt'
-        USART_ITConfig(USART1, USART_IT_RXNE, ENABLE);
+        USART_ITConfig(USART2, USART_IT_RXNE, ENABLE);
 }
 
 void NVIC_Configure(void) {
