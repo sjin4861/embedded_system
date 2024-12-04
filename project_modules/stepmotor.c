@@ -18,27 +18,44 @@ const uint8_t step_sequence[8][4] = {
     {1, 0, 0, 1}
 };
 
+// 딜레이 함수
+void delay_us(uint32_t us) {
+    // 시스템 클럭 주파수에 따라 조정해야 합니다.
+    // 예를 들어, 시스템 클럭이 72MHz인 경우:
+    uint32_t count = (SystemCoreClock / 1000000) * us / 5;
+    for (; count != 0; count--);
+}
+
 // RPM 설정
 void set_rpm(int rpm) {
-    // 1분의 마이크로초
     uint32_t microseconds_per_minute = 60000000;
-    
-    // 1스텝당 대기 시간 계산
     uint32_t total_steps = 4096;  // 1회전당 스텝 수
     uint32_t idle_time = microseconds_per_minute / (total_steps * rpm);
-    
-    // 모터 회전
-    void StepMotor(uint16_t steps, uint32_t delay) {
-    for (uint16_t i = 0; i < steps; i++) {
-        for (uint8_t j = 0; j < 8; j++) {
-            // 각 IN 핀에 대한 출력 설정
-            GPIO_WriteBit(GPIOB, GPIO_Pin_0, step_sequence[j][0] ? Bit_SET : Bit_RESET);
-            GPIO_WriteBit(GPIOB, GPIO_Pin_1, step_sequence[j][1] ? Bit_SET : Bit_RESET);
-            GPIO_WriteBit(GPIOB, GPIO_Pin_2, step_sequence[j][2] ? Bit_SET : Bit_RESET);
-            GPIO_WriteBit(GPIOB, GPIO_Pin_3, step_sequence[j][3] ? Bit_SET : Bit_RESET);
-            // 딜레이
-            for (volatile uint32_t k = 0; k < delay; k++);
-        }
+
+    for (uint32_t step = 0; step < total_steps; step++) {
+        // 단계에 맞게 핀 설정
+        if (step_sequence[step % 8][0])
+            GPIOD->BSRR = IN1_PIN;
+        else
+            GPIOD->BRR = IN1_PIN;
+
+        if (step_sequence[step % 8][1])
+            GPIOD->BSRR = IN2_PIN;
+        else
+            GPIOD->BRR = IN2_PIN;
+
+        if (step_sequence[step % 8][2])
+            GPIOD->BSRR = IN3_PIN;
+        else
+            GPIOD->BRR = IN3_PIN;
+
+        if (step_sequence[step % 8][3])
+            GPIOD->BSRR = IN4_PIN;
+        else
+            GPIOD->BRR = IN4_PIN;
+
+        // 딜레이
+        delay_us(idle_time);
     }
 }
 
@@ -56,6 +73,9 @@ void GPIO_Configuration(void) {
 }
 
 int main(void) {
+    // 시스템 초기화 (필요에 따라 추가)
+    SystemInit();
+
     // GPIO 설정
     GPIO_Configuration();
 
@@ -65,6 +85,6 @@ int main(void) {
     // 메인 루프
     while (1) {
         // 추가 기능 구현 가능
-		set_rpm(13);
+        set_rpm(13);
     }
 }
