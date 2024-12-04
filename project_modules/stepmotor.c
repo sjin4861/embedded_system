@@ -1,147 +1,67 @@
-// RPM(Revolutions Per Minutes) : 분당 회전수
-// 1분: 60sec : 1,000,000us(1초) x 60 = 60,000,000us
-// 1,000,000us(1초)
-//  --> 1초(1000ms) ==> 1ms(1000us) x 1000ms ==> 1,000,000us
-//  4096스텝 : 1바퀴(4096 스텝이동)
-//--- 1바퀴도는데 필요한 총 스텝수 : 4096
-// 4096 / 8(0.7) ==> 512 sequence : 360도
-// 1 sequence(8step) : 0.70312도
-// 0.70312도 x 512sequence = 360
+#include "stm32f10x.h"
 
-//------- set_rpm(13) 으로 지정시의 동작 상황 ---
-// 60,000,000us(1분) / 4096 / rpm
-// 1126us(1스텝 idle타임) x4096 = 4,612,096us
-//                           = 4612ms
-//                           = 4.6초
-// 60초 / 4.6(1회전시 소요시간 초) ==> 13회전
-// 시계방향으로 1회전 <---> 반시계방향으로 1회전
+// 스텝 모터 핀 정의
+#define IN1_PIN    GPIO_Pin_0  // GPIOA Pin 0
+#define IN2_PIN    GPIO_Pin_1  // GPIOA Pin 1
+#define IN3_PIN    GPIO_Pin_2  // GPIOA Pin 2
+#define IN4_PIN    GPIO_Pin_3  // GPIOA Pin 3
 
-void stepmotor_drive(int step)
-{
-	switch(step){
-	case 0:
-		HAL_GPIO_WritePin(GPIOD, IN1_Pin, 1); //GPIOD, IN1~4_Pin 부분 원하는 포트 번호로 교체하여 사용
-		HAL_GPIO_WritePin(GPIOD, IN2_Pin, 0);
-		HAL_GPIO_WritePin(GPIOD, IN3_Pin, 0);
-		HAL_GPIO_WritePin(GPIOD, IN4_Pin, 0);
-		break;
-	case 1:
-		HAL_GPIO_WritePin(GPIOD, IN1_Pin, 1);
-		HAL_GPIO_WritePin(GPIOD, IN2_Pin, 1);
-		HAL_GPIO_WritePin(GPIOD, IN3_Pin, 0);
-		HAL_GPIO_WritePin(GPIOD, IN4_Pin, 0);
-		break;
-	case 2:
-		HAL_GPIO_WritePin(GPIOD, IN1_Pin, 0);
-		HAL_GPIO_WritePin(GPIOD, IN2_Pin, 1);
-		HAL_GPIO_WritePin(GPIOD, IN3_Pin, 0);
-		HAL_GPIO_WritePin(GPIOD, IN4_Pin, 0);
-		break;
-	case 3:
-		HAL_GPIO_WritePin(GPIOD, IN1_Pin, 0);
-		HAL_GPIO_WritePin(GPIOD, IN2_Pin, 1);
-		HAL_GPIO_WritePin(GPIOD, IN3_Pin, 1);
-		HAL_GPIO_WritePin(GPIOD, IN4_Pin, 0);
-		break;
-	case 4:
-		HAL_GPIO_WritePin(GPIOD, IN1_Pin, 0);
-		HAL_GPIO_WritePin(GPIOD, IN2_Pin, 0);
-		HAL_GPIO_WritePin(GPIOD, IN3_Pin, 1);
-		HAL_GPIO_WritePin(GPIOD, IN4_Pin, 0);
-		break;
-	case 5:
-		HAL_GPIO_WritePin(GPIOD, IN1_Pin, 0);
-		HAL_GPIO_WritePin(GPIOD, IN2_Pin, 0);
-		HAL_GPIO_WritePin(GPIOD, IN3_Pin, 1);
-		HAL_GPIO_WritePin(GPIOD, IN4_Pin, 1);
-		break;
-	case 6:
-		HAL_GPIO_WritePin(GPIOD, IN1_Pin, 0);
-		HAL_GPIO_WritePin(GPIOD, IN2_Pin, 0);
-		HAL_GPIO_WritePin(GPIOD, IN3_Pin, 0);
-		HAL_GPIO_WritePin(GPIOD, IN4_Pin, 1);
-		break;
-	case 7:
-		HAL_GPIO_WritePin(GPIOD, IN1_Pin, 1);
-		HAL_GPIO_WritePin(GPIOD, IN2_Pin, 0);
-		HAL_GPIO_WritePin(GPIOD, IN3_Pin, 0);
-		HAL_GPIO_WritePin(GPIOD, IN4_Pin, 1);
-		break;
-	}
+// 스텝 시퀀스 정의
+const uint8_t step_sequence[8][4] = {
+    {1, 0, 0, 0},
+    {1, 1, 0, 0},
+    {0, 1, 0, 0},
+    {0, 1, 1, 0},
+    {0, 0, 1, 0},
+    {0, 0, 1, 1},
+    {0, 0, 0, 1},
+    {1, 0, 0, 1}
+};
+
+// RPM 설정
+void set_rpm(int rpm) {
+    // 1분의 마이크로초
+    uint32_t microseconds_per_minute = 60000000;
+    
+    // 1스텝당 대기 시간 계산
+    uint32_t total_steps = 4096;  // 1회전당 스텝 수
+    uint32_t idle_time = microseconds_per_minute / (total_steps * rpm);
+    
+    // 모터 회전
+    for (uint32_t step = 0; step < total_steps; step++) {
+        // 단계에 맞게 핀 설정
+        GPIO_WriteBit(GPIOA, IN1_PIN, step_sequence[step % 8][0]);
+        GPIO_WriteBit(GPIOA, IN2_PIN, step_sequence[step % 8][1]);
+        GPIO_WriteBit(GPIOA, IN3_PIN, step_sequence[step % 8][2]);
+        GPIO_WriteBit(GPIOA, IN4_PIN, step_sequence[step % 8][3]);
+        
+        // 대기
+        for (volatile uint32_t i = 0; i < idle_time; i++);  // 대기 루프
+    }
 }
 
-void set_rpm(int rpm) // rpm 1~ 13
-{
-	delay_us(60000000/4096/rpm);
-	// 최대 speed 기준(13) : delay_us(1126);
-}
-void stepmotor_main_test(void)
-{
-	for(int i=0; i < 2048; i++)  //512 => 시계방향 1회전
-	{
-		for (int j=0; j < 8; j++)
-		{
-			stepmotor_drive(j);
-			set_rpm(13);
-		}
-	}
+void GPIO_Configuration(void) {
+    GPIO_InitTypeDef GPIO_InitStructure;
 
-	for(int i=0; i < 2048; i++)  //반시계방향 1회전
-	{
-		for (int j=7; j >= 0; j--)
-		{
-			stepmotor_drive(j);
-			set_rpm(13);  // rpm값만큼 wait
-		}
-	}
+    // GPIOA 클럭 활성화
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
+
+    // IN1~IN4 핀을 출력으로 설정
+    GPIO_InitStructure.GPIO_Pin = IN1_PIN | IN2_PIN | IN3_PIN | IN4_PIN;
+    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_PP;
+    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_Init(GPIOA, &GPIO_InitStructure);
 }
 
-void stepmotor_forward(int forward_active_flag)
-{
-#if 1
-	if(forward_active_flag==1)
-	{
-		static int step = 0;
-		step = (step+1)%8;
-		stepmotor_drive(step);
-		set_rpm(13);
-	}
+int main(void) {
+    // GPIO 설정
+    GPIO_Configuration();
 
-#else
+    // RPM 설정 (예: 13 RPM)
+    set_rpm(13);
 
-	for(int i=0; i < 850; i++)  //512 => 시계방향 1회전
-	{
-		for (int j=0; j < 8; j++)
-		{
-			stepmotor_drive(j);
-			set_rpm(13);
-		}
-	}
-#endif
-}
-
-void stepmotor_backward(int backward_active_flag)
-{
-#if 1
-
-	if(backward_active_flag==1)
-	{
-
-		static int step = 8;
-		step = (step-1);
-		if(step==-1){step=7;}
-		stepmotor_drive(step);
-		set_rpm(13);
-	}
-
-#else
-	for(int i=0; i < 850; i++)  //반시계방향 1회전
-	{
-		for (int j=7; j >= 0; j--)
-		{
-			stepmotor_drive(j);
-			set_rpm(13);  // rpm값만큼 wait
-		}
-	}
-#endif
+    // 메인 루프
+    while (1) {
+        // 추가 기능 구현 가능
+    }
 }
