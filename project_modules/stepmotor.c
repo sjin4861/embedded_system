@@ -28,15 +28,17 @@ void set_rpm(int rpm) {
     uint32_t idle_time = microseconds_per_minute / (total_steps * rpm);
     
     // 모터 회전
-    for (uint32_t step = 0; step < total_steps; step++) {
-        // 단계에 맞게 핀 설정
-        GPIO_WriteBit(GPIOD, IN1_PIN, step_sequence[step % 8][0]);
-        GPIO_WriteBit(GPIOD, IN2_PIN, step_sequence[step % 8][1]);
-        GPIO_WriteBit(GPIOD, IN3_PIN, step_sequence[step % 8][2]);
-        GPIO_WriteBit(GPIOD, IN4_PIN, step_sequence[step % 8][3]);
-        
-        // 대기
-        for (volatile uint32_t i = 0; i < idle_time; i++);  // 대기 루프
+    void StepMotor(uint16_t steps, uint32_t delay) {
+    for (uint16_t i = 0; i < steps; i++) {
+        for (uint8_t j = 0; j < 8; j++) {
+            // 각 IN 핀에 대한 출력 설정
+            GPIO_WriteBit(GPIOB, GPIO_Pin_0, step_sequence[j][0] ? Bit_SET : Bit_RESET);
+            GPIO_WriteBit(GPIOB, GPIO_Pin_1, step_sequence[j][1] ? Bit_SET : Bit_RESET);
+            GPIO_WriteBit(GPIOB, GPIO_Pin_2, step_sequence[j][2] ? Bit_SET : Bit_RESET);
+            GPIO_WriteBit(GPIOB, GPIO_Pin_3, step_sequence[j][3] ? Bit_SET : Bit_RESET);
+            // 딜레이
+            for (volatile uint32_t k = 0; k < delay; k++);
+        }
     }
 }
 
