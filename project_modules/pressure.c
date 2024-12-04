@@ -3,6 +3,7 @@
 #include "stm32f10x_usart.h"
 #include "stm32f10x_rcc.h"
 #include "stm32f10x_adc.h"
+#include <stdio.h>
 
 /* Function Prototypes */
 void RCC_Configure(void);
@@ -113,7 +114,7 @@ int main(void)
         adc_value = ADC_GetConversionValue(ADC1);
 
         /* 문자열로 변환하여 USART 전송 */
-        sprintf(buffer, "ADC: %d\r\n", adc_value);
+        printf("ADC: %d\r\n", adc_value);
         for (int i = 0; buffer[i] != '\0'; i++)
         {
             USART1_SendData(buffer[i]);
