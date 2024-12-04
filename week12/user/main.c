@@ -7,6 +7,7 @@
  #include "stm32f10x_adc.h"
  #include "touch.h"
  #include "lcd.h"
+
  //색상 배열 정의
 
 
@@ -34,6 +35,9 @@ void GPIO_Configure()
   GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AIN;
   GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
   GPIO_Init(GPIOC, &GPIO_InitStructure);
+
+  // LED 핀 정리
+
   
 }
 
@@ -67,38 +71,6 @@ void ADC_Configure(void)
   ADC_SoftwareStartConvCmd(ADC1, ENABLE);
   
 }
-void DMA_Configure(void)
-{
-  DMA_InitTypeDef DMA_InitStructure;
-  //데이터를 읽거나 쓸 주변 장치의 기본 주소 설정
-  DMA_InitStructure.DMA_PeripheralBaseAddr = (uint32_t)&ADC1->DR;
-  //ADC 변환값을 저장할 메모리 지정
-  DMA_InitStructure.DMA_MemoryBaseAddr = (uint32_t)ADC_Value;
-  //주변장치에서 메모리로 전송하게 설정한다.
-  DMA_InitStructure.DMA_DIR = DMA_DIR_PeripheralSRC;
-  //DMA 가 한번 전송할 데이터의 크기
-  DMA_InitStructure.DMA_BufferSize = 4;
-  //데이터 메모리 크기를 32 비트로 설정
-  DMA_InitStructure.DMA_MemoryDataSize = DMA_MemoryDataSize_Word;
-  //주변장치 메모리 크기를 32 비트로 설정
-  DMA_InitStructure.DMA_PeripheralDataSize = DMA_PeripheralDataSize_Word;
-  //주변장치 주소 고정
-  DMA_InitStructure.DMA_PeripheralInc = DMA_PeripheralInc_Disable;
-  //메모리 주소 고정
-  DMA_InitStructure.DMA_MemoryInc = DMA_MemoryInc_Disable;
-  //순환모드로 설정
-  DMA_InitStructure.DMA_Mode = DMA_Mode_Circular;
-  //우선순위 veryHigh로 설정
-  DMA_InitStructure.DMA_Priority = DMA_Priority_VeryHigh;
-  //메모리에서 메모리로의 전송을막는다.
-  DMA_InitStructure.DMA_M2M = DMA_M2M_Disable;
- 
-  DMA_DeInit(DMA1_Channel1);
-  DMA_Init(DMA1_Channel1, &DMA_InitStructure);
-  DMA_Cmd(DMA1_Channel1, ENABLE);
-  
-}
-
 
 int main() {
 
