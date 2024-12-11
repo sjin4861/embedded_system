@@ -659,6 +659,7 @@ void USART2_IRQHandler() {
     }
 }
 
+// 압력센서 인터럽트 만들기
 
 void update_leds_based_on_car_presence(void) {
     for (int col = 0; col < 3; col++) {
