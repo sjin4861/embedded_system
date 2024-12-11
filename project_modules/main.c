@@ -152,14 +152,14 @@ void ADC_Configure(void);
 void USART_Configure(void);
 void NVIC_Configure(void);
 void EXTI_Configure(void);
-
+void delay_step(uint32_t us);
 void set_led_color(uint8_t led_num, uint8_t color);
 void update_leds_based_on_car_presence(void);
 
 uint16_t read_adc_value(uint8_t channel);
 
 void step_motor_init(void);
-void set_rpm(int motor_index, int rpm, int direction);
+void set_steps(int motor_index, int rotation, int direction);
 
 float measure_distance(uint8_t sensor_index);
 void trigger_ultrasonic(uint8_t sensor_index);
@@ -467,12 +467,14 @@ void step_motor_init(void) {
     // 필요시 추가 초기화
 }
 
-void set_rpm(int motor_index, int rpm, int direction) {
+void set_steps(int motor_index, int rotation, int direction) {
     uint32_t microseconds_per_minute = 60000000;
     uint32_t total_steps = 4096;  // 1회전당 스텝 수
+    uint32_t total_rotation = total_steps * rotation; // 총회전 수
+    uint32_t rpm = 18; // 기본 RPM 설정
     uint32_t idle_time = microseconds_per_minute / (total_steps * rpm);
 
-    for (uint32_t step = 0; step < total_steps; step++) {
+    for (uint32_t step = 0; step < total_rotation; step++) {
         int sequence_index = (direction == -1) ? (7 - (step % 8)) : (step % 8);
         // 단계에 맞게 핀 설정
         for (int pin = 0; pin < 4; pin++) {
@@ -482,7 +484,7 @@ void set_rpm(int motor_index, int rpm, int direction) {
                 GPIOE->BRR = motor_pins[motor_index][pin];
         }
         // 딜레이
-        delay_us(idle_time);
+        delay_step(idle_time);
     }
 }
 
@@ -751,6 +753,13 @@ void delay(int step){
     for (volatile int i = 0; i < step; i++);
 }
 
+void delay_step(uint32_t us) {
+    // 시스템 클럭 주파수에 따라 조정해야 합니다.
+    // 예를 들어, 시스템 클럭이 72MHz인 경우:
+    uint32_t count = (SystemCoreClock / 1000000) * us / 5;
+    for (; count != 0; count--);
+}
+
 //============================ 메인 함수 ============================
 int main(void) {
     SystemInit();
@@ -789,14 +798,14 @@ int main(void) {
         float dist_entrance = measure_distance(0);
         if (dist_entrance < 10.0f && dist_entrance > 0.0f) {
             // 차량 입구 도착 감지 -> 문 개방 (모터0 예)
-            set_rpm(0, 10);
+            set_steps(0, 10, 1);
         }
 
         // 압력센서 확인 (0~3)
         uint16_t adc_val0 = read_adc_value(ADC_Channel_0); // 압력센서0
         if (adc_val0 > 500) {
             // 수직 이동 모터 동작 (예: 모터1)
-            set_rpm(1, 13); 
+            set_steps(1, 13, 1); 
         }
 
         // 블루투스 출차 명령
@@ -804,9 +813,11 @@ int main(void) {
             bluetooth_command_received = 0;
             if (strcmp((char*)bluetooth_rx_buffer, "OUT") == 0) {
                 // 차량 하강 (예: 모터1 반대방향 구현 필요)
-                set_rpm(1, 13, -1); // direction = -1 (역방향)
+                set_steps(1, 13, -1); // direction = -1 (역방향)
             }
         }
         delay(1000000);
     }
+
+    set_steps(1, 3, 1);
 }
