@@ -621,6 +621,78 @@ void EXTI11_IRQHandler(void) {
     }
 }
 
+// ---------------------- revise ---------------------------
+// 압력센서로 인터럽트 트리거를 발생시켜야 함.
+volatile uint8_t enter_trigger = 0; // 입구 입력 센서 트리거
+volatile uint8_t out_trigger = 0;   // 출구 입력 센서 트리거
+
+void ADC_Configure(void) {
+    ADC_InitTypeDef ADC_InitStructure;
+
+    // ADC1 클럭 활성화
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_ADC1, ENABLE);
+
+    // ADC1 초기화 설정
+    ADC_InitStructure.ADC_Mode = ADC_Mode_Independent;  // 독립 모드
+    ADC_InitStructure.ADC_ScanConvMode = ENABLE;        // 스캔 모드 (여러 채널 변환)
+    ADC_InitStructure.ADC_ContinuousConvMode = ENABLE;  // 연속 변환 모드
+    ADC_InitStructure.ADC_ExternalTrigConv = ADC_ExternalTrigConv_None;
+    ADC_InitStructure.ADC_DataAlign = ADC_DataAlign_Right;
+    ADC_InitStructure.ADC_NbrOfChannel = 2;             // 변환할 채널 수: 2
+    ADC_Init(ADC1, &ADC_InitStructure);
+
+    // PA0 (입구 압력 센서) - ADC 채널 0 설정
+    ADC_RegularChannelConfig(ADC1, ADC_Channel_0, 1, ADC_SampleTime_28Cycles5);
+
+    // PA1 (출구 압력 센서) - ADC 채널 1 설정
+    ADC_RegularChannelConfig(ADC1, ADC_Channel_1, 2, ADC_SampleTime_28Cycles5);
+
+    // ADC 활성화 및 캘리브레이션
+    ADC_Cmd(ADC1, ENABLE);
+    ADC_ResetCalibration(ADC1);
+    while (ADC_GetResetCalibrationStatus(ADC1));
+    ADC_StartCalibration(ADC1);
+    while (ADC_GetCalibrationStatus(ADC1));
+
+    // ADC 변환 시작
+    ADC_SoftwareStartConvCmd(ADC1, ENABLE);
+}
+
+
+void NVIC_Configure(void) {
+    NVIC_InitTypeDef NVIC_InitStructure;
+
+    // ADC1 인터럽트 활성화    
+    NVIC_InitStructure.NVIC_IRQChannel = ADC1_IRQn;
+    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0x00;
+    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0x00;
+    NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+    NVIC_Init(&NVIC_InitStructure);
+}
+
+void ADC1_IRQHandler(void) {
+    if (ADC_GetITStatus(ADC1, ADC_IT_EOC) != RESET) {
+        static uint16_t adc_values[2];
+
+        // 두 압력 센서 값 읽기
+        adc_values[0] = ADC_GetConversionValue(ADC1); // 채널 0 (입구 압력 센서)
+        adc_values[1] = ADC_GetConversionValue(ADC1); // 채널 1 (출구 압력 센서)
+
+        // 입구 압력 센서 조건 (예: 임계값 3000 초과)
+        if (adc_values[0] > 3000) {
+            enter_trigger = 1;
+        }
+
+        // 출구 압력 센서 조건 (예: 임계값 3000 초과)
+        if (adc_values[1] > 3000) {
+            out_trigger = 1;
+        }
+
+        // 인터럽트 플래그 클리어
+        ADC_ClearITPendingBit(ADC1, ADC_IT_EOC);
+    }
+}
+// --------------------- end of revise -------------------------------
 
 
 // 이런 식으로 3,4,7,8,9,10,11에 대한 EXTI 핸들러도 동일한 패턴으로 구현
@@ -660,7 +732,6 @@ void USART2_IRQHandler() {
         USART_ClearITPendingBit(USART2,USART_IT_RXNE);
     }
 }
-
 
 void update_leds_based_on_car_presence(void) {
     for (int col = 0; col < 3; col++) {
