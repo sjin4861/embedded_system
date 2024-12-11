@@ -724,7 +724,6 @@ int main(void) {
             // 모터 수직 이동, 방금 들어온 차를 보고 모터 index와 방향을 결정해야함
         }
         // 블루투스 출차 명령
-        
         if (bluetooth_command_received) {
             bluetooth_command_received = 0;
             if (strcmp((char*)bluetooth_rx_buffer, "OUT") == 0) {
