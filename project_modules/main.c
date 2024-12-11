@@ -152,7 +152,7 @@ void ADC_Configure(void);
 void USART_Configure(void);
 void NVIC_Configure(void);
 void EXTI_Configure(void);
-
+void delay_step(uint32_t us);
 void set_led_color(uint8_t led_num, uint8_t color);
 void update_leds_based_on_car_presence(void);
 
@@ -484,7 +484,7 @@ void set_steps(int motor_index, int rotation, int direction) {
                 GPIOE->BRR = motor_pins[motor_index][pin];
         }
         // 딜레이
-        delay(idle_time);
+        delay_step(idle_time);
     }
 }
 
@@ -680,6 +680,13 @@ void update_leds_based_on_car_presence(void) {
 
 void delay(int step){
     for (volatile int i = 0; i < step; i++);
+}
+
+void delay_step(uint32_t us) {
+    // 시스템 클럭 주파수에 따라 조정해야 합니다.
+    // 예를 들어, 시스템 클럭이 72MHz인 경우:
+    uint32_t count = (SystemCoreClock / 1000000) * us / 5;
+    for (; count != 0; count--);
 }
 
 //============================ 메인 함수 ============================
