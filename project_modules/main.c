@@ -404,6 +404,17 @@ void NVIC_Configure(void) {
 
     // 필요시 EXTI 인터럽트 추가
 }
+void TIM1_Configure(void) {
+    TIM_TimeBaseInitTypeDef TIM_TimeBaseStructure;
+
+    TIM_TimeBaseStructure.TIM_Prescaler = 72 - 1; // 1MHz (1μs 단위)
+    TIM_TimeBaseStructure.TIM_CounterMode = TIM_CounterMode_Up;
+    TIM_TimeBaseStructure.TIM_Period = 0xFFFF; // 최대 카운터 값
+    TIM_TimeBaseStructure.TIM_ClockDivision = TIM_CKD_DIV1;
+    TIM_TimeBaseInit(TIM1, &TIM_TimeBaseStructure);
+
+    TIM_Cmd(TIM1, ENABLE); // 타이머 활성화
+}
 
 void set_led_color(uint8_t led_num, uint8_t color) {
     // led_num: 0,1,2 / color: 0=Green,1=Yellow,2=Red
@@ -486,18 +497,40 @@ void set_rpm(int motor_index, int rpm, int direction) {
     }
 }
 
-void trigger_ultrasonic(uint8_t sensor_index) {
-    GPIO_SetBits(ULTRASONIC_TRIG_PORT, ultrasonic_trig_pins[sensor_index]);
-    for(volatile int i=0; i<720; i++); // 약 10us 가정
-    GPIO_ResetBits(ULTRASONIC_TRIG_PORT, ultrasonic_trig_pins[sensor_index]);
+static void Ultrasonic_Trigger(uint8_t index) {
+    // 해당 센서의 Trigger 핀을 약 10µs 동안 HIGH 유지 후 LOW
+    GPIO_SetBits(ULTRASONIC_TRIG_PORT, ultrasonic_trig_pins[index]);
+    delay_us(10);
+    GPIO_ResetBits(ULTRASONIC_TRIG_PORT, ultrasonic_trig_pins[index]);
 }
 
 float measure_distance(uint8_t sensor_index) {
     // 초음파 거리 측정 로직 필요
     // 여기서는 틀만 제공
-    trigger_ultrasonic(sensor_index);
+      uint16_t start_time = 0, stop_time = 0, echo_time = 0;
+    float distance = 0.0;
+    // Trig 신호 송출
+    Ultrasonic_Trigger(sensor_index);
+    // Echo 핀 HIGH 대기
+    while (GPIO_ReadInputDataBit(ULTRASONIC_ECHO_PORT, ultrasonic_echo_pins[sensor_index]) == 0);
+    // Echo 핀 HIGH 시작 시간 기록
+    start_time = TIM_GetCounter(TIM1);
+    // Echo 핀이 LOW로 전환될 때까지 대기
+    while (GPIO_ReadInputDataBit(ULTRASONIC_ECHO_PORT, ultrasonic_echo_pins[sensor_index]) == 1);
+    // Echo 핀 HIGH 종료 시간 기록
+    stop_time = TIM_GetCounter(TIM1);
+    printf("%u", stop_time);
+    // Echo 핀의 HIGH 지속 시간 계산
+    if (stop_time >= start_time) {
+        echo_time = stop_time - start_time;
+    } else {
+        echo_time = (0xFFFF - start_time) + stop_time; // 타이머 오버플로우 처리
+    }
+
+    // 거리 계산 (단위: cm)
+    distance = (float)(echo_time * 0.0343) / 2.0;
+
     // Echo 측정 로직 필요
-    float distance = 0.0f;
     return distance;
 }
 
@@ -701,16 +734,29 @@ int main(void) {
         // 각 초음파 센서(1~9)로 거리 측정하고 일정 거리 이하면 차 있음(1), 아니면 없음(0)
         // sensor_index: 1,2,3  / 4,5,6 / 7,8,9 => 3x3
         // row = (sensor_index-1)/3, col = (sensor_index-1)%3
-        for (int s = 1; s <= 9; s++) {
+
+        for (int s = 1; s <= 3; s++) {
             float dist = measure_distance(s);
             // 예: dist < 20cm 이면 차 있다고 가정
-            if (dist > 0 && dist < 20.0f) {
+            if (dist > 0 && dist < DISTANCE_THRESHOLD) {
                 car_presence[(s-1)/3][(s-1)%3] = 1;
+                
             } else {
                 car_presence[(s-1)/3][(s-1)%3] = 0;
             }
         }
-
+        for(int i = 0;i<3;i++)
+        {
+            for(int j = 1;j<=3;j++)
+            {
+                printf("%d ",car_presence[(i*3) + j]);
+                if(j == 3)
+                {
+                    printf("\n"); 
+                }
+            }
+        }
+        printf("\n");
         // 차 유무에 따라 LED 업데이트
         update_leds_based_on_car_presence();
 
