@@ -621,31 +621,29 @@ void EXTI11_IRQHandler(void) {
 
 // ---------------------- revise ---------------------------
 // 압력센서로 인터럽트 트리거를 발생시켜야 함.
+volatile uint8_t enter_trigger = 0; // 입구 입력 센서 트리거
+volatile uint8_t out_trigger = 0;   // 출구 입력 센서 트리거
+
 void ADC_Configure(void) {
     ADC_InitTypeDef ADC_InitStructure;
 
-    // ADC1 쿨럭 활성화
+    // ADC1 클럭 활성화
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_ADC1, ENABLE);
 
     // ADC1 초기화 설정
-    ADC_InitStructure.ADC_Mode = ADC_Mode_Independent;  // 독립모드
-    ADC_InitStructure.ADC_ScanConvMode = DISABLE;       // 단일 채널 모드
+    ADC_InitStructure.ADC_Mode = ADC_Mode_Independent;  // 독립 모드
+    ADC_InitStructure.ADC_ScanConvMode = ENABLE;        // 스캔 모드 (여러 채널 변환)
     ADC_InitStructure.ADC_ContinuousConvMode = ENABLE;  // 연속 변환 모드
-    ADC_InitStructure.ADC_ExternalTrigConv = ADC_ExternalTrigConv_None; // 외부 트리거 사용 안함
-    ADC_InitStructure.ADC_DataAlign = ADC_DataAlign_Right; // 데이터 정렬 : 오른쪽
-    ADC_InitStructure.ADC_NbrOfChannel = 1; // 변환 채널 수 : 1
+    ADC_InitStructure.ADC_ExternalTrigConv = ADC_ExternalTrigConv_None;
+    ADC_InitStructure.ADC_DataAlign = ADC_DataAlign_Right;
+    ADC_InitStructure.ADC_NbrOfChannel = 2;             // 변환할 채널 수: 2
     ADC_Init(ADC1, &ADC_InitStructure);
 
-    // PA0 핀을 ADC 채널 0으로 설정
+    // PA0 (입구 압력 센서) - ADC 채널 0 설정
     ADC_RegularChannelConfig(ADC1, ADC_Channel_0, 1, ADC_SampleTime_28Cycles5);
 
-    // Analog Watchdog 설정
-    ADC_AnalogWatchdogThresholdsConfig(ADC1, 3000, 1000); // 상한값 : 3000, 하한값 : 1000
-    ADC_AnalogWatchdogSingleChannelConfig(ADC1, ADC_Channel_0); // 채널 0에 대해 Analog Watchdog 설정
-    ADC_AnalogWatchdogCmd(ADC1, ADC_AnalogWatchdog_SingleRegEnable); // 단일 채널에 대해 AWD 활성화
-
-    // ADC 인터럽트 활성화 (Analog Watchdog 인터럽트)
-    ADC_ITConfig(ADC1, ADC_IT_AWD, ENABLE);
+    // PA1 (출구 압력 센서) - ADC 채널 1 설정
+    ADC_RegularChannelConfig(ADC1, ADC_Channel_1, 2, ADC_SampleTime_28Cycles5);
 
     // ADC 활성화 및 캘리브레이션
     ADC_Cmd(ADC1, ENABLE);
@@ -657,6 +655,7 @@ void ADC_Configure(void) {
     // ADC 변환 시작
     ADC_SoftwareStartConvCmd(ADC1, ENABLE);
 }
+
 
 void NVIC_Configure(void) {
     NVIC_InitTypeDef NVIC_InitStructure;
@@ -670,12 +669,25 @@ void NVIC_Configure(void) {
 }
 
 void ADC1_IRQHandler(void) {
-    if (ADC_GetITStatus(ADC1, ADC_IT_AWD) != RESET) {
-        // 압력 센서 값이 임계값을 벗어난 경우 초음파 센서 트리거
-        trigger_ultrasonic(0);  // ex) 초음파 센서 0 번 트리거
+    if (ADC_GetITStatus(ADC1, ADC_IT_EOC) != RESET) {
+        static uint16_t adc_values[2];
+
+        // 두 압력 센서 값 읽기
+        adc_values[0] = ADC_GetConversionValue(ADC1); // 채널 0 (입구 압력 센서)
+        adc_values[1] = ADC_GetConversionValue(ADC1); // 채널 1 (출구 압력 센서)
+
+        // 입구 압력 센서 조건 (예: 임계값 3000 초과)
+        if (adc_values[0] > 3000) {
+            enter_trigger = 1;
+        }
+
+        // 출구 압력 센서 조건 (예: 임계값 3000 초과)
+        if (adc_values[1] > 3000) {
+            out_trigger = 1;
+        }
 
         // 인터럽트 플래그 클리어
-        ADC_ClearITPendingBit(ADC1, ADC_IT_AWD);
+        ADC_ClearITPendingBit(ADC1, ADC_IT_EOC);
     }
 }
 // --------------------- end of revise -------------------------------
