@@ -436,7 +436,6 @@ void set_led_color(uint8_t led_num, uint8_t color) {
     GPIO_SetBits(LED_PORT, pin);
 }
 
-// 주차공간 정보(car_presence)에 따라 LED 상태 업데이트
 // 각 열(column)별 상태:
 // - 모든 칸이 차 있으면(Red)
 // - 모든 칸이 비어있으면(Green)
