@@ -159,7 +159,7 @@ void update_leds_based_on_car_presence(void);
 uint16_t read_adc_value(uint8_t channel);
 
 void step_motor_init(void);
-void set_rpm(int motor_index, int rpm, int direction);
+void set_steps(int motor_index, int rotation, int direction);
 
 float measure_distance(uint8_t sensor_index);
 void trigger_ultrasonic(uint8_t sensor_index);
@@ -168,8 +168,6 @@ void Bluetooth_SendString(char *str);
 
 void EXTI0_IRQHandler(void);
 void USART1_IRQHandler(void);
-
-void delay(int);
 
 //============================ 함수 구현부 ============================
 
@@ -457,7 +455,7 @@ void update_leds_based_on_car_presence(void) {
         }
     }
 }
-//준식이
+
 uint16_t read_adc_value(uint8_t channel) {
     ADC_RegularChannelConfig(ADC1, channel, 1, ADC_SampleTime_28Cycles5);
     ADC_SoftwareStartConvCmd(ADC1, ENABLE);
@@ -486,7 +484,7 @@ void set_steps(int motor_index, int rotation, int direction) {
                 GPIOE->BRR = motor_pins[motor_index][pin];
         }
         // 딜레이
-        delay_us(idle_time);
+        delay(idle_time);
     }
 }
 
@@ -663,7 +661,6 @@ void USART2_IRQHandler() {
     }
 }
 
-// 압력센서 인터럽트 만들기
 
 void update_leds_based_on_car_presence(void) {
     for (int col = 0; col < 3; col++) {
@@ -691,6 +688,7 @@ int main(void) {
     RCC_Configure();
     GPIO_Configure();
     ADC_Configure();
+    USART_Configure();
     USART1_Init(); // PC
     USART2_Init(); // 블루투스
     NVIC_Configure();
