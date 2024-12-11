@@ -740,4 +740,6 @@ int main(void) {
         }
         delay(1000000);
     }
+
+    set_steps(1, 3);
 }
