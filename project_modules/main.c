@@ -455,7 +455,7 @@ void update_leds_based_on_car_presence(void) {
         }
     }
 }
-
+//준식이
 uint16_t read_adc_value(uint8_t channel) {
     ADC_RegularChannelConfig(ADC1, channel, 1, ADC_SampleTime_28Cycles5);
     ADC_SoftwareStartConvCmd(ADC1, ENABLE);
