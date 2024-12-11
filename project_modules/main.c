@@ -145,6 +145,10 @@ uint16_t motor_pins[4][4] = {
     {GPIO_Pin_12, GPIO_Pin_13, GPIO_Pin_14, GPIO_Pin_15} // 모터3
 };
 
+// 압력센서 트리거
+int enter_trigger = 0;
+int out_trigger = 0;
+
 //============================ 함수 프로토타입 선언 ============================
 void RCC_Configure(void);
 void GPIO_Configure(void);
@@ -701,39 +705,33 @@ int main(void) {
         // 각 초음파 센서(1~9)로 거리 측정하고 일정 거리 이하면 차 있음(1), 아니면 없음(0)
         // sensor_index: 1,2,3  / 4,5,6 / 7,8,9 => 3x3
         // row = (sensor_index-1)/3, col = (sensor_index-1)%3
-        for (int s = 1; s <= 9; s++) {
-            float dist = measure_distance(s);
-            // 예: dist < 20cm 이면 차 있다고 가정
-            if (dist > 0 && dist < 20.0f) {
-                car_presence[(s-1)/3][(s-1)%3] = 1;
-            } else {
-                car_presence[(s-1)/3][(s-1)%3] = 0;
-            }
+
+        if (enter_trigger){
+            // 문 개방
+
+            // 초음파 센서 9개 전부 트리거 발생 시작
+            
+            // 만약 초음파 센서 중 하나에서 차가 감지가 되면 car_presence 값 변경
+            
+            // 차 유무에 따라 LED 업데이트
+            update_leds_based_on_car_presence();
+
+           
         }
-
-        // 차 유무에 따라 LED 업데이트
-        update_leds_based_on_car_presence();
-
-        // 입구 초음파(0)로 차량 감지
-        float dist_entrance = measure_distance(0);
-        if (dist_entrance < 10.0f && dist_entrance > 0.0f) {
-            // 차량 입구 도착 감지 -> 문 개방 (모터0 예)
-            set_rpm(0, 10);
+        if (out_trigger){
+            // 사람이 출구를 나가는 것이 감지가 되는 경우
+            
+            // 모터 수직 이동, 방금 들어온 차를 보고 모터 index와 방향을 결정해야함
         }
-
-        // 압력센서 확인 (0~3)
-        uint16_t adc_val0 = read_adc_value(ADC_Channel_0); // 압력센서0
-        if (adc_val0 > 500) {
-            // 수직 이동 모터 동작 (예: 모터1)
-            set_rpm(1, 13); 
-        }
-
         // 블루투스 출차 명령
+        
         if (bluetooth_command_received) {
             bluetooth_command_received = 0;
             if (strcmp((char*)bluetooth_rx_buffer, "OUT") == 0) {
-                // 차량 하강 (예: 모터1 반대방향 구현 필요)
+                // 일단 테스트를 위해 차량 하강
                 set_rpm(1, 13, -1); // direction = -1 (역방향)
+
+                // 실제 구현에서는 주차 공간을 토대로 판단해서 방향을 결정해야함.
             }
         }
         delay(1000000);
