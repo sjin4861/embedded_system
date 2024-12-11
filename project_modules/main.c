@@ -10,7 +10,7 @@
 
 /* =============================================================================
    하드웨어 구성 요소:
-   1. 초음파 센서 11개 (0:입구, 1~9: 3x3 주차공간, 10:출구)
+   1. 초음파 센서 11개 (3:입구, 4~14: 3x3 주차공간, 15:출구)
    2. 압력 센서 4개
    3. 신호등 LED 3개 (각각 Green/Yellow/Red)
    4. 스텝모터 4개
@@ -19,14 +19,14 @@
    핀 매핑:
    ----------------------------------------------------------------
    초음파 센서 핀 매핑
-   입구 : 0
-     |  1   2   3 |
-     |  4   5   6 |
-     |  7   8   9 |
-   출구 : 10
+   입구 : 3
+     |  4   7   8 |
+     |  9   10   11 |
+     |  12   13   14 |
+   출구 : 15
 
-   초음파센서 Trig 핀: PC0 ~ PC10
-   초음파센서 Echo 핀: PD0 ~ PD10
+   초음파센서 Trig 핀: PC3 ~ PC15 (C5, 6을 D와 통일하기 위해 제거)
+   초음파센서 Echo 핀: PD3 ~ PD15 (D5, 6을 블루투스에 사용)
    ----------------------------------------------------------------
    신호등 LED 핀 매핑
      | 0   1   2 |
@@ -44,8 +44,12 @@
    신호등 2 RED   : PB8
    ----------------------------------------------------------------
    블루투스 모듈 핀 매핑 (USART1 사용)
-   TX 핀: PA9 (USART1_TX)
-   RX 핀: PA10 (USART1_RX)
+   TX 핀: PA9 (USART1_RX)
+   RX 핀: PA10 (USART1_TX)
+
+   (USART2 사용)
+   TX 핀: PD5 (USART1_RX)
+   RX 핀: PD6 (USART1_TX)
    ----------------------------------------------------------------
    스텝모터 모듈 핀 매핑
 
@@ -64,8 +68,6 @@
 
    압력센서 0 : PA0 (ADC_Channel_0)
    압력센서 1 : PA1 (ADC_Channel_1)
-   압력센서 2 : PA2 (ADC_Channel_2)
-   압력센서 3 : PA3 (ADC_Channel_3)
 
    제약사항:
    - 반드시 인터럽트 사용: 예) 초음파 에코 신호나 압력센서 변화에 대한 EXTI 인터럽트
@@ -91,10 +93,14 @@
 
 #define LED_PORT GPIOB
 
+#define LED_COLOR_GREEN 0
+#define LED_COLOR_YELLOW 1
+#define LED_COLOR_RED 2
+
 // 초음파 센서 수
 #define ULTRASONIC_COUNT 11
-#define THRESHOLD_1 1000
-#define THRESHOLD_2 1000
+#define DISTANCE_THRESHOLD 20.0f
+#define CMD_BUFFER_SIZE 100
 
 // 블루투스 수신 버퍼
 volatile char bluetooth_rx_buffer[100];
@@ -104,9 +110,6 @@ volatile uint8_t bluetooth_command_received = 0;
 // 주차공간 차 유무 저장 (3x3)
 // 1: 차 있음, 0: 차 없음
 uint8_t car_presence[3][3] = {0};
-
-// 센서값 배열(예: 필요시 사용)
-uint16_t sensor_values[6];
 
 // 스텝모터 시퀀스 (단순 예제)
 const uint8_t step_sequence[8][4] = {
@@ -122,13 +125,13 @@ const uint8_t step_sequence[8][4] = {
 
 // 초음파 센서 trig/echo 핀 배열
 uint16_t ultrasonic_trig_pins[ULTRASONIC_COUNT] = {
-    GPIO_Pin_0, GPIO_Pin_1, GPIO_Pin_2, GPIO_Pin_3, GPIO_Pin_4,
-    GPIO_Pin_5, GPIO_Pin_6, GPIO_Pin_7, GPIO_Pin_8, GPIO_Pin_9, GPIO_Pin_10
+    GPIO_Pin_3, GPIO_Pin_4, GPIO_Pin_7, GPIO_Pin_8, GPIO_Pin_9,
+    GPIO_Pin_10, GPIO_Pin_11, GPIO_Pin_12, GPIO_Pin_13, GPIO_Pin_14, GPIO_Pin_15
 };
 
 uint16_t ultrasonic_echo_pins[ULTRASONIC_COUNT] = {
-    GPIO_Pin_0, GPIO_Pin_1, GPIO_Pin_2, GPIO_Pin_3, GPIO_Pin_4,
-    GPIO_Pin_5, GPIO_Pin_6, GPIO_Pin_7, GPIO_Pin_8, GPIO_Pin_9, GPIO_Pin_10
+    GPIO_Pin_3, GPIO_Pin_4, GPIO_Pin_7, GPIO_Pin_8, GPIO_Pin_9,
+    GPIO_Pin_10, GPIO_Pin_11, GPIO_Pin_12, GPIO_Pin_13, GPIO_Pin_14, GPIO_Pin_15
 };
 
 #define ULTRASONIC_TRIG_PORT GPIOC
@@ -155,7 +158,7 @@ void update_leds_based_on_car_presence(void);
 uint16_t read_adc_value(uint8_t channel);
 
 void step_motor_init(void);
-void set_rpm(int motor_index, int rpm);
+void set_rpm(int motor_index, int rpm, int direction);
 
 float measure_distance(uint8_t sensor_index);
 void trigger_ultrasonic(uint8_t sensor_index);
@@ -175,6 +178,8 @@ void RCC_Configure(void) {
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOE, ENABLE);
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_USART1, ENABLE);
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_ADC1, ENABLE);
+    RCC_APB1PeriphClockCmd(RCC_APB1Periph_USART2, ENABLE);
+
     // 타이머 등 필요시 추가
 }
 
@@ -204,13 +209,24 @@ void GPIO_Configure(void) {
     GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN_FLOATING;
     GPIO_Init(GPIOA, &GPIO_InitStructure);
 
+    // USART2 TX: PD5 (AF_PP), USART2 RX: PD6 (IN_FLOATING)
+    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_5;
+    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP;
+    GPIO_Init(GPIOD, &GPIO_InitStructure);
+	
+    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_6;
+    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN_FLOATING;
+    GPIO_Init(GPIOD, &GPIO_InitStructure);
+
     // 스텝모터 핀 (PE0~PE15) 모두 출력
     GPIO_InitStructure.GPIO_Pin = 0xFFFF; // PE0~PE15
     GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_PP;
     GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
     GPIO_Init(GPIOE, &GPIO_InitStructure);
 
-    // 초음파 센서 Trig (PC0~PC10 : 출력)
+    // 초음파 센서 Trig (PC3~PC15 : 출력)
     GPIO_InitStructure.GPIO_Pin = 0;
     for (int i = 0; i < ULTRASONIC_COUNT; i++) {
         GPIO_InitStructure.GPIO_Pin |= ultrasonic_trig_pins[i];
@@ -219,14 +235,60 @@ void GPIO_Configure(void) {
     GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
     GPIO_Init(ULTRASONIC_TRIG_PORT, &GPIO_InitStructure);
 
-    // 초음파 센서 Echo (PD0~PD10 : 입력)
+    // 초음파 센서 Echo (PD3~PD15 : 입력)
     GPIO_InitStructure.GPIO_Pin = 0;
     for (int i = 0; i < ULTRASONIC_COUNT; i++) {
         GPIO_InitStructure.GPIO_Pin |= ultrasonic_echo_pins[i];
     }
     GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN_FLOATING;
     GPIO_Init(ULTRASONIC_ECHO_PORT, &GPIO_InitStructure);
+
+    // USART1 TX: PA9 (AF_PP), USART1 RX: PA10 (IN_FLOATING)
+    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_9; 
+    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP;
+    GPIO_Init(GPIOA, &GPIO_InitStructure);
+    
+    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_10;
+    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN_FLOATING;
+    GPIO_Init(GPIOA, &GPIO_InitStructure);
 }
+
+void USART1_Init(void)
+{
+    USART_InitTypeDef USART1_InitStructure;
+
+    USART_Cmd(USART1, ENABLE);
+
+    USART1_InitStructure.USART_BaudRate = 9600;
+    USART1_InitStructure.USART_WordLength = USART_WordLength_8b;
+    USART1_InitStructure.USART_StopBits = USART_StopBits_1;
+    USART1_InitStructure.USART_Parity = USART_Parity_No;
+    USART1_InitStructure.USART_Mode = USART_Mode_Rx | USART_Mode_Tx;
+    USART1_InitStructure.USART_HardwareFlowControl = USART_HardwareFlowControl_None;
+    USART_Init(USART1, &USART1_InitStructure);
+
+    USART_ITConfig(USART1, USART_IT_RXNE, ENABLE);
+}
+
+void USART2_Init(void)
+{
+    USART_InitTypeDef USART2_InitStructure;
+
+    USART_Cmd(USART2, ENABLE);
+
+    USART2_InitStructure.USART_BaudRate = 9600;
+    USART2_InitStructure.USART_WordLength = USART_WordLength_8b;
+    USART2_InitStructure.USART_StopBits = USART_StopBits_1;
+    USART2_InitStructure.USART_Parity = USART_Parity_No;
+    USART2_InitStructure.USART_Mode = USART_Mode_Rx | USART_Mode_Tx;
+    USART2_InitStructure.USART_HardwareFlowControl = USART_HardwareFlowControl_None;
+    USART_Init(USART2, &USART2_InitStructure);
+
+    USART_ITConfig(USART2, USART_IT_RXNE, ENABLE);
+}
+
 
 void ADC_Configure(void) {
     ADC_InitTypeDef ADC_InitStructure;
@@ -251,28 +313,24 @@ void ADC_Configure(void) {
     ADC_SoftwareStartConvCmd(ADC1, ENABLE);
 }
 
-void USART_Configure(void) {
-    USART_InitTypeDef USART_InitStructure;
-
-    USART_InitStructure.USART_BaudRate = 9600;
-    USART_InitStructure.USART_WordLength = USART_WordLength_8b;
-    USART_InitStructure.USART_StopBits = USART_StopBits_1;
-    USART_InitStructure.USART_Parity = USART_Parity_No; 
-    USART_InitStructure.USART_Mode = USART_Mode_Rx | USART_Mode_Tx;
-    USART_InitStructure.USART_HardwareFlowControl = USART_HardwareFlowControl_None;
-    USART_Init(USART1, &USART_InitStructure);
-
-    USART_ITConfig(USART1, USART_IT_RXNE, ENABLE);
-    USART_Cmd(USART1, ENABLE);
-}
-
 void NVIC_Configure(void) {
     NVIC_InitTypeDef NVIC_InitStructure;
+	
+    NVIC_PriorityGroupConfig(NVIC_PriorityGroup_0);
 
-    // USART1 인터럽트
+    // USART1 IRQ
+    NVIC_EnableIRQ(USART1_IRQn);
     NVIC_InitStructure.NVIC_IRQChannel = USART1_IRQn;
-    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0x01;
-    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0x01;
+    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0x00; 
+    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0x00; 
+    NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+    NVIC_Init(&NVIC_InitStructure);
+
+    // USART2 IRQ
+    NVIC_EnableIRQ(USART2_IRQn);
+    NVIC_InitStructure.NVIC_IRQChannel = USART2_IRQn;
+    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0x00; 
+    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0x00; 
     NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
     NVIC_Init(&NVIC_InitStructure);
 
@@ -322,11 +380,11 @@ void update_leds_based_on_car_presence(void) {
             if (car_presence[row][col] == 1) count++;
         }
         if (count == 3) {
-            set_led_color(col, 2); // Red
+            set_led_color(col, LED_COLOR_RED); // Red
         } else if (count == 0) {
-            set_led_color(col, 0); // Green
+            set_led_color(col, LED_COLOR_GREEN); // Green
         } else {
-            set_led_color(col, 1); // Yellow
+            set_led_color(col, LED_COLOR_YELLOW); // Yellow
         }
     }
 }
@@ -342,21 +400,21 @@ void step_motor_init(void) {
     // 필요시 추가 초기화
 }
 
-void set_rpm(int motor_index, int rpm) {
+void set_rpm(int motor_index, int rpm, int direction) {
     uint32_t microseconds_per_minute = 60000000;
-    uint32_t total_steps = 4096; 
+    uint32_t total_steps = 4096;  // 1회전당 스텝 수
     uint32_t idle_time = microseconds_per_minute / (total_steps * rpm);
 
     for (uint32_t step = 0; step < total_steps; step++) {
-        for (int i = 0; i < 4; i++) {
-            if (step_sequence[step % 8][i])
-                GPIOE->BSRR = motor_pins[motor_index][i];
+        // 단계에 맞게 핀 설정
+        for (int pin = 0; pin < 4; pin++) {
+            if (step_sequence[step % 8][pin])
+                GPIOE->BSRR = motor_pins[motor_index][pin];
             else
-                GPIOE->BRR = motor_pins[motor_index][i];
+                GPIOE->BRR = motor_pins[motor_index][pin];
         }
-
-        // 간단한 딜레이 (정확한 us 딜레이는 타이머 기반 구현 필요)
-        for(volatile uint32_t i = 0; i < idle_time; i++);
+        // 딜레이
+        delay_us(idle_time);
     }
 }
 
@@ -382,23 +440,172 @@ void Bluetooth_SendString(char *str) {
     }
 }
 
-void EXTI0_IRQHandler(void) {
-    if (EXTI_GetITStatus(EXTI_Line0) != RESET) {
-        EXTI_ClearITPendingBit(EXTI_Line0);
+// EXTI 핸들러에서 사용할 헬퍼 함수: sensor_index -> (row,col)
+void map_sensor_to_rc(int sensor, int *r, int *c) {
+    switch(sensor) {
+        case 1: *r=0;*c=0;break;
+        case 2: *r=0;*c=1;break;
+        case 3: *r=0;*c=2;break;
+        case 4: *r=1;*c=0;break;
+        case 7: *r=1;*c=1;break;
+        case 8: *r=1;*c=2;break;
+        case 9: *r=2;*c=0;break;
+        case 10:*r=2;*c=1;break;
+        case 11:*r=2;*c=2;break;
+        default:*r=-1;*c=-1;break;
     }
 }
 
-void USART1_IRQHandler(void) {
-    if(USART_GetITStatus(USART1, USART_IT_RXNE) != RESET) {
-        char c = USART_ReceiveData(USART1);
-        if(c == '\n' || c == '\r') {
-            bluetooth_rx_buffer[bluetooth_rx_index] = '\0';
-            bluetooth_command_received = 1;
-            bluetooth_rx_index = 0;
-        } else {
-            bluetooth_rx_buffer[bluetooth_rx_index++] = c;
+// 초음파 센서 인터럽트 핸들러 예제 (센서 Echo 핀 Rising/Falling 엣지 감지)
+// 실제로는 Echo 신호의 Rising 시각 기록, Falling시각 기록 후 거리 계산 필요
+// 여기서는 단순히 인터럽트가 발생하면 distance를 측정했다고 가정하고
+// 그 결과에 따라 car_presence 설정 예제 코드만 제시
+void EXTI1_IRQHandler(void) { // 예: 센서1 Echo 핸들러
+    if (EXTI_GetITStatus(EXTI_Line1) != RESET) {
+        int r,c;
+        float dist = measure_distance(1);
+        map_sensor_to_rc(1,&r,&c);
+        if (r>=0 && c>=0) {
+            if (dist < 20.0f && dist > 0.0f) car_presence[r][c] = 1;
+            else car_presence[r][c] = 0;
         }
-        USART_ClearITPendingBit(USART1, USART_IT_RXNE);
+        EXTI_ClearITPendingBit(EXTI_Line1);
+    }
+}
+
+// 이거 EXTI 
+void EXTI4_IRQHandler(void) {
+    if (EXTI_GetITStatus(EXTI_Line4) != RESET) {
+        float dist = measure_distance(4);
+        int r, c;
+        map_sensor_to_rc(7, &r, &c);
+        if (r >= 0 && c >= 0) {
+            if (dist < DISTANCE_THRESHOLD && dist > 0.0f) car_presence[r][c] = 1;
+            else car_presence[r][c] = 0;
+        }
+        EXTI_ClearITPendingBit(EXTI_Line4);
+    }
+}
+
+void EXTI7_IRQHandler(void) {
+    if (EXTI_GetITStatus(EXTI_Line7) != RESET) {
+        float dist = measure_distance(7);
+        int r, c;
+        map_sensor_to_rc(7, &r, &c);
+        if (r >= 0 && c >= 0) {
+            if (dist < DISTANCE_THRESHOLD && dist > 0.0f) car_presence[r][c] = 1;
+            else car_presence[r][c] = 0;
+        }
+        EXTI_ClearITPendingBit(EXTI_Line7);
+    }
+}
+
+void EXTI8_IRQHandler(void) {
+    if (EXTI_GetITStatus(EXTI_Line8) != RESET) {
+        float dist = measure_distance(8);
+        int r, c;
+        map_sensor_to_rc(8, &r, &c);
+        if (r >= 0 && c >= 0) {
+            if (dist < DISTANCE_THRESHOLD && dist > 0.0f) car_presence[r][c] = 1;
+            else car_presence[r][c] = 0;
+        }
+        EXTI_ClearITPendingBit(EXTI_Line8);
+    }
+}
+
+void EXTI9_IRQHandler(void) {
+    if (EXTI_GetITStatus(EXTI_Line9) != RESET) {
+        float dist = measure_distance(9);
+        int r, c;
+        map_sensor_to_rc(9, &r, &c);
+        if (r >= 0 && c >= 0) {
+            if (dist < DISTANCE_THRESHOLD && dist > 0.0f) car_presence[r][c] = 1;
+            else car_presence[r][c] = 0;
+        }
+        EXTI_ClearITPendingBit(EXTI_Line9);
+    }
+}
+
+void EXTI10_IRQHandler(void) {
+    if (EXTI_GetITStatus(EXTI_Line10) != RESET) {
+        float dist = measure_distance(10);
+        int r, c;
+        map_sensor_to_rc(10, &r, &c);
+        if (r >= 0 && c >= 0) {
+            if (dist < DISTANCE_THRESHOLD && dist > 0.0f) car_presence[r][c] = 1;
+            else car_presence[r][c] = 0;
+        }
+        EXTI_ClearITPendingBit(EXTI_Line10);
+    }
+}
+
+void EXTI11_IRQHandler(void) {
+    if (EXTI_GetITStatus(EXTI_Line11) != RESET) {
+        float dist = measure_distance(11);
+        int r, c;
+        map_sensor_to_rc(11, &r, &c);
+        if (r >= 0 && c >= 0) {
+            if (dist < DISTANCE_THRESHOLD && dist > 0.0f) car_presence[r][c] = 1;
+            else car_presence[r][c] = 0;
+        }
+        EXTI_ClearITPendingBit(EXTI_Line11);
+    }
+}
+
+
+
+// 이런 식으로 3,4,7,8,9,10,11에 대한 EXTI 핸들러도 동일한 패턴으로 구현
+// 실제로는 각 센서 echo 핀에 맞는 EXTI_LineX를 사용해야 함
+// USART1 IRQ (PC와 연결)
+void USART1_IRQHandler() {
+    uint16_t word;
+    if(USART_GetITStatus(USART1,USART_IT_RXNE)!=RESET){
+        word = USART_ReceiveData(USART1);
+        // USART1에서 받은 데이터를 USART2로 에코
+        USART_SendData(USART2, word);       
+        USART_ClearITPendingBit(USART1,USART_IT_RXNE);
+    }
+}
+
+// USART2 IRQ (블루투스 모듈 연결)
+void USART2_IRQHandler() {
+    uint16_t word;
+    if(USART_GetITStatus(USART2,USART_IT_RXNE)!=RESET){
+        word = USART_ReceiveData(USART2);
+        
+        // 명령 버퍼에 저장
+        if (word == '\n' || word == '\r') {
+            // 명령 종료
+            bluetooth_rx_buffer[bluetooth_rx_index] = '\0';
+            bluetooth_rx_index = 0;
+            bluetooth_command_received = 1;
+        } else {
+            if (bluetooth_rx_index < CMD_BUFFER_SIZE - 1) {
+                bluetooth_rx_buffer[bluetooth_rx_index++] = (char)word;
+            }
+        }
+        
+        // 받은 데이터를 USART1로 에코 (디버깅용)
+        USART_SendData(USART1, word);
+
+        USART_ClearITPendingBit(USART2,USART_IT_RXNE);
+    }
+}
+
+
+void update_leds_based_on_car_presence(void) {
+    for (int col = 0; col < 3; col++) {
+        int count = 0;
+        for (int row = 0; row < 3; row++) {
+            if (car_presence[row][col] == 1) count++;
+        }
+        if (count == 2) {
+            set_led_color(col, LED_COLOR_RED); // Red
+        } else if (count == 0) {
+            set_led_color(col, LED_COLOR_GREEN); // Green
+        } else {
+            set_led_color(col, LED_COLOR_YELLOW); // Yellow
+        }
     }
 }
 
@@ -413,6 +620,8 @@ int main(void) {
     GPIO_Configure();
     ADC_Configure();
     USART_Configure();
+    USART1_Init(); // PC
+    USART2_Init(); // 블루투스
     NVIC_Configure();
     step_motor_init();
 
@@ -457,7 +666,7 @@ int main(void) {
             bluetooth_command_received = 0;
             if (strcmp((char*)bluetooth_rx_buffer, "OUT") == 0) {
                 // 차량 하강 (예: 모터1 반대방향 구현 필요)
-                set_rpm(1, 13);
+                set_rpm(1, 13, -1); // direction = -1 (역방향)
             }
         }
         delay(1000000);
