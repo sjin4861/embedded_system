@@ -151,6 +151,7 @@ void GPIO_Configure(void);
 void ADC_Configure(void);
 void USART_Configure(void);
 void NVIC_Configure(void);
+void EXTI_Configure(void);
 
 void set_led_color(uint8_t led_num, uint8_t color);
 void update_leds_based_on_car_presence(void);
@@ -194,8 +195,8 @@ void GPIO_Configure(void) {
     GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
     GPIO_Init(LED_PORT, &GPIO_InitStructure);
 
-    // ADC용 압력센서 핀 설정 (PA0~PA3)
-    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_0 | GPIO_Pin_1 | GPIO_Pin_2 | GPIO_Pin_3;
+    // ADC용 압력센서 핀 설정 (PA0~PA1)
+    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_0 | GPIO_Pin_1;
     GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AIN; 
     GPIO_Init(GPIOA, &GPIO_InitStructure);
 
@@ -289,7 +290,6 @@ void USART2_Init(void)
     USART_ITConfig(USART2, USART_IT_RXNE, ENABLE);
 }
 
-
 void ADC_Configure(void) {
     ADC_InitTypeDef ADC_InitStructure;
 
@@ -311,6 +311,74 @@ void ADC_Configure(void) {
     while(ADC_GetCalibrationStatus(ADC1));
 
     ADC_SoftwareStartConvCmd(ADC1, ENABLE);
+}
+
+void EXTI_Configure(void)
+{
+    EXTI_InitTypeDef EXTI_InitStructure;
+
+    // 공통 설정
+    EXTI_InitStructure.EXTI_Mode = EXTI_Mode_Interrupt;
+    // Echo 신호는 Rising 엣지에서 타이머 시작, Falling 엣지에서 타이머 정지를 위해 
+    // Rising, Falling 모두 감지할 수 있도록 EXTI_Trigger_Rising_Falling 사용 가능.
+    // 필요에 따라 EXTI_Trigger_Rising, EXTI_Trigger_Falling를 선택하세요.
+    EXTI_InitStructure.EXTI_Trigger = EXTI_Trigger_Rising_Falling;
+    EXTI_InitStructure.EXTI_LineCmd = ENABLE;
+
+    // Sensor 1: PD3 -> EXTI_Line3
+    GPIO_EXTILineConfig(GPIO_PortSourceGPIOD, GPIO_PinSource3);
+    EXTI_InitStructure.EXTI_Line = EXTI_Line3;
+    EXTI_Init(&EXTI_InitStructure);
+
+    // Sensor 2: PD4 -> EXTI_Line4
+    GPIO_EXTILineConfig(GPIO_PortSourceGPIOD, GPIO_PinSource4);
+    EXTI_InitStructure.EXTI_Line = EXTI_Line4;
+    EXTI_Init(&EXTI_InitStructure);
+
+    // Sensor 3: PD7 -> EXTI_Line7
+    GPIO_EXTILineConfig(GPIO_PortSourceGPIOD, GPIO_PinSource7);
+    EXTI_InitStructure.EXTI_Line = EXTI_Line7;
+    EXTI_Init(&EXTI_InitStructure);
+
+    // Sensor 4: PD8 -> EXTI_Line8
+    GPIO_EXTILineConfig(GPIO_PortSourceGPIOD, GPIO_PinSource8);
+    EXTI_InitStructure.EXTI_Line = EXTI_Line8;
+    EXTI_Init(&EXTI_InitStructure);
+
+    // Sensor 5: PD9 -> EXTI_Line9
+    GPIO_EXTILineConfig(GPIO_PortSourceGPIOD, GPIO_PinSource9);
+    EXTI_InitStructure.EXTI_Line = EXTI_Line9;
+    EXTI_Init(&EXTI_InitStructure);
+
+    // Sensor 6: PD10 -> EXTI_Line10
+    GPIO_EXTILineConfig(GPIO_PortSourceGPIOD, GPIO_PinSource10);
+    EXTI_InitStructure.EXTI_Line = EXTI_Line10;
+    EXTI_Init(&EXTI_InitStructure);
+
+    // Sensor 7: PD11 -> EXTI_Line11
+    GPIO_EXTILineConfig(GPIO_PortSourceGPIOD, GPIO_PinSource11);
+    EXTI_InitStructure.EXTI_Line = EXTI_Line11;
+    EXTI_Init(&EXTI_InitStructure);
+
+    // Sensor 8: PD12 -> EXTI_Line12
+    GPIO_EXTILineConfig(GPIO_PortSourceGPIOD, GPIO_PinSource12);
+    EXTI_InitStructure.EXTI_Line = EXTI_Line12;
+    EXTI_Init(&EXTI_InitStructure);
+
+    // Sensor 9: PD13 -> EXTI_Line13
+    GPIO_EXTILineConfig(GPIO_PortSourceGPIOD, GPIO_PinSource13);
+    EXTI_InitStructure.EXTI_Line = EXTI_Line13;
+    EXTI_Init(&EXTI_InitStructure);
+
+    // Sensor 10: PD14 -> EXTI_Line14
+    GPIO_EXTILineConfig(GPIO_PortSourceGPIOD, GPIO_PinSource14);
+    EXTI_InitStructure.EXTI_Line = EXTI_Line14;
+    EXTI_Init(&EXTI_InitStructure);
+
+    // Sensor 11: PD15 -> EXTI_Line15
+    GPIO_EXTILineConfig(GPIO_PortSourceGPIOD, GPIO_PinSource15);
+    EXTI_InitStructure.EXTI_Line = EXTI_Line15;
+    EXTI_Init(&EXTI_InitStructure);
 }
 
 void NVIC_Configure(void) {
@@ -406,9 +474,10 @@ void set_rpm(int motor_index, int rpm, int direction) {
     uint32_t idle_time = microseconds_per_minute / (total_steps * rpm);
 
     for (uint32_t step = 0; step < total_steps; step++) {
+        int sequence_index = (direction == -1) ? (7 - (step % 8)) : (step % 8);
         // 단계에 맞게 핀 설정
         for (int pin = 0; pin < 4; pin++) {
-            if (step_sequence[step % 8][pin])
+            if (step_sequence[sequence_index][pin])
                 GPIOE->BSRR = motor_pins[motor_index][pin];
             else
                 GPIOE->BRR = motor_pins[motor_index][pin];
@@ -439,7 +508,6 @@ void Bluetooth_SendString(char *str) {
         USART_SendData(USART1, *str++);
     }
 }
-
 // EXTI 핸들러에서 사용할 헬퍼 함수: sensor_index -> (row,col)
 void map_sensor_to_rc(int sensor, int *r, int *c) {
     switch(sensor) {
