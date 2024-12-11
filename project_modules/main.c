@@ -173,6 +173,8 @@ void Bluetooth_SendString(char *str);
 void EXTI0_IRQHandler(void);
 void USART1_IRQHandler(void);
 
+void delay(int);
+
 //============================ 함수 구현부 ============================
 
 void RCC_Configure(void) {
@@ -459,7 +461,7 @@ void update_leds_based_on_car_presence(void) {
         }
     }
 }
-
+//준식이
 uint16_t read_adc_value(uint8_t channel) {
     ADC_RegularChannelConfig(ADC1, channel, 1, ADC_SampleTime_28Cycles5);
     ADC_SoftwareStartConvCmd(ADC1, ENABLE);
@@ -471,12 +473,14 @@ void step_motor_init(void) {
     // 필요시 추가 초기화
 }
 
-void set_rpm(int motor_index, int rpm, int direction) {
+void set_steps(int motor_index, int rotation, int direction) {
     uint32_t microseconds_per_minute = 60000000;
     uint32_t total_steps = 4096;  // 1회전당 스텝 수
+    uint32_t total_rotation = total_steps * rotation; // 총회전 수
+    uint32_t rpm = 18; // 기본 RPM 설정
     uint32_t idle_time = microseconds_per_minute / (total_steps * rpm);
 
-    for (uint32_t step = 0; step < total_steps; step++) {
+    for (uint32_t step = 0; step < total_rotation; step++) {
         int sequence_index = (direction == -1) ? (7 - (step % 8)) : (step % 8);
         // 단계에 맞게 핀 설정
         for (int pin = 0; pin < 4; pin++) {
@@ -663,6 +667,7 @@ void USART2_IRQHandler() {
     }
 }
 
+// 압력센서 인터럽트 만들기
 
 void update_leds_based_on_car_presence(void) {
     for (int col = 0; col < 3; col++) {
@@ -690,7 +695,6 @@ int main(void) {
     RCC_Configure();
     GPIO_Configure();
     ADC_Configure();
-    USART_Configure();
     USART1_Init(); // PC
     USART2_Init(); // 블루투스
     NVIC_Configure();
@@ -731,8 +735,12 @@ int main(void) {
                 set_rpm(1, 13, -1); // direction = -1 (역방향)
 
                 // 실제 구현에서는 주차 공간을 토대로 판단해서 방향을 결정해야함.
+                // 차량 하강 (예: 모터1 반대방향 구현 필요)
+                set_steps(1, 13, -1); // direction = -1 (역방향)
             }
         }
         delay(1000000);
     }
+
+    set_steps(1, 3, 1);
 }
