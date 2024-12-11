@@ -720,14 +720,14 @@ int main(void) {
         float dist_entrance = measure_distance(0);
         if (dist_entrance < 10.0f && dist_entrance > 0.0f) {
             // 차량 입구 도착 감지 -> 문 개방 (모터0 예)
-            set_steps(0, 10);
+            set_steps(0, 10, 1);
         }
 
         // 압력센서 확인 (0~3)
         uint16_t adc_val0 = read_adc_value(ADC_Channel_0); // 압력센서0
         if (adc_val0 > 500) {
             // 수직 이동 모터 동작 (예: 모터1)
-            set_steps(1, 13); 
+            set_steps(1, 13, 1); 
         }
 
         // 블루투스 출차 명령
@@ -741,5 +741,5 @@ int main(void) {
         delay(1000000);
     }
 
-    set_steps(1, 3);
+    set_steps(1, 3, 1);
 }
