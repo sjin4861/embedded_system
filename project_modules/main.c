@@ -619,6 +619,66 @@ void EXTI11_IRQHandler(void) {
     }
 }
 
+// ---------------------- revise ---------------------------
+// 압력센서로 인터럽트 트리거를 발생시켜야 함.
+void ADC_Configure(void) {
+    ADC_InitTypeDef ADC_InitStructure;
+
+    // ADC1 쿨럭 활성화
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_ADC1, ENABLE);
+
+    // ADC1 초기화 설정
+    ADC_InitStructure.ADC_Mode = ADC_Mode_Independent;  // 독립모드
+    ADC_InitStructure.ADC_ScanConvMode = DISABLE;       // 단일 채널 모드
+    ADC_InitStructure.ADC_ContinuousConvMode = ENABLE;  // 연속 변환 모드
+    ADC_InitStructure.ADC_ExternalTrigConv = ADC_ExternalTrigConv_None; // 외부 트리거 사용 안함
+    ADC_InitStructure.ADC_DataAlign = ADC_DataAlign_Right; // 데이터 정렬 : 오른쪽
+    ADC_InitStructure.ADC_NbrOfChannel = 1; // 변환 채널 수 : 1
+    ADC_Init(ADC1, &ADC_InitStructure);
+
+    // PA0 핀을 ADC 채널 0으로 설정
+    ADC_RegularChannelConfig(ADC1, ADC_Channel_0, 1, ADC_SampleTime_28Cycles5);
+
+    // Analog Watchdog 설정
+    ADC_AnalogWatchdogThresholdsConfig(ADC1, 3000, 1000); // 상한값 : 3000, 하한값 : 1000
+    ADC_AnalogWatchdogSingleChannelConfig(ADC1, ADC_Channel_0); // 채널 0에 대해 Analog Watchdog 설정
+    ADC_AnalogWatchdogCmd(ADC1, ADC_AnalogWatchdog_SingleRegEnable); // 단일 채널에 대해 AWD 활성화
+
+    // ADC 인터럽트 활성화 (Analog Watchdog 인터럽트)
+    ADC_ITConfig(ADC1, ADC_IT_AWD, ENABLE);
+
+    // ADC 활성화 및 캘리브레이션
+    ADC_Cmd(ADC1, ENABLE);
+    ADC_ResetCalibration(ADC1);
+    while (ADC_GetResetCalibrationStatus(ADC1));
+    ADC_StartCalibration(ADC1);
+    while (ADC_GetCalibrationStatus(ADC1));
+
+    // ADC 변환 시작
+    ADC_SoftwareStartConvCmd(ADC1, ENABLE);
+}
+
+void NVIC_Configure(void) {
+    NVIC_InitTypeDef NVIC_InitStructure;
+
+    // ADC1 인터럽트 활성화    
+    NVIC_InitStructure.NVIC_IRQChannel = ADC1_IRQn;
+    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0x00;
+    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0x00;
+    NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+    NVIC_Init(&NVIC_InitStructure);
+}
+
+void ADC1_IRQHandler(void) {
+    if (ADC_GetITStatus(ADC1, ADC_IT_AWD) != RESET) {
+        // 압력 센서 값이 임계값을 벗어난 경우 초음파 센서 트리거
+        trigger_ultrasonic(0);  // ex) 초음파 센서 0 번 트리거
+
+        // 인터럽트 플래그 클리어
+        ADC_ClearITPendingBit(ADC1, ADC_IT_AWD);
+    }
+}
+// --------------------- end of revise -------------------------------
 
 
 // 이런 식으로 3,4,7,8,9,10,11에 대한 EXTI 핸들러도 동일한 패턴으로 구현
@@ -658,8 +718,6 @@ void USART2_IRQHandler() {
         USART_ClearITPendingBit(USART2,USART_IT_RXNE);
     }
 }
-
-// 압력센서 인터럽트 만들기
 
 void update_leds_based_on_car_presence(void) {
     for (int col = 0; col < 3; col++) {
