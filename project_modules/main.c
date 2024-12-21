@@ -321,7 +321,7 @@ void EXTI_Configure(void)
     // 압력센서 1 : PA1 -> EXTI_Line1
     GPIO_EXTILineConfig(GPIO_PortSourceGPIOA, GPIO_PinSource1);
     EXTI_InitStructure.EXTI_Line = EXTI_Line1;
-    EXTI_Init(&EXTI_InitStructure);EXTI0_IRQHandler
+    EXTI_Init(&EXTI_InitStructure);EXTI0_IRQHandler;
 }
 
 void NVIC_Configure(void) {
@@ -377,26 +377,6 @@ void LED_SetColor(uint8_t led_num, uint8_t color) {
     GPIO_SetBits(LED_PORT, pin);
 }
 
-// 각 열(column)별 상태:
-// - 모든 칸이 차 있으면(Red)
-// - 모든 칸이 비어있으면(Green)
-// - 그 외(Yellow)
-void LED_UpdateByCarPresence(void) {
-    for (int col = 0; col < 3; col++) {
-        int count = 0;
-        for (int row = 0; row < 3; row++) {
-            if (car_presence[row][col] == 1) count++;
-        }
-        if (count == 3) {
-            LED_SetColor(col, LED_COLOR_RED); // Red
-        } else if (count == 0) {
-            LED_SetColor(col, LED_COLOR_GREEN); // Green
-        } else {
-            LED_SetColor(col, LED_COLOR_YELLOW); // Yellow
-        }
-    }
-}
-
 void Motor_SetSteps(int motor_index, int rotation, int direction) {
     uint32_t microseconds_per_minute = 60000000;
     uint32_t total_steps = 4096;  // 1회전당 스텝 수
@@ -414,7 +394,7 @@ void Motor_SetSteps(int motor_index, int rotation, int direction) {
                 GPIOE->BRR = motor_pins[motor_index][pin];
         }
         // 딜레이
-        delay_us(idle_time);
+        delay(idle_time);
     }
 }
 
