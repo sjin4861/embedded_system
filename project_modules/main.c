@@ -146,7 +146,7 @@ uint16_t motor_pins[4][4] = {
 };
 
 // 압력센서 트리거
-int enter_trigger = 0;
+int enter_trigger = 1;
 int out_trigger = 0;
 
 //============================ 함수 프로토타입 선언 ============================
@@ -579,15 +579,26 @@ int main(void) {
         // 각 초음파 센서(1~9)로 거리 측정하고 일정 거리 이하면 차 있음(1), 아니면 없음(0)
         // sensor_index: 1,2,3  / 4,5,6 / 7,8,9 => 3x3
         // row = (sensor_index-1)/3, col = (sensor_index-1)%3
-        distance = Ultrasonic_MeasureDistance(0);
+        distance = Ultrasonic_MeasureDistance(7);
         printf("%f\n",distance);
         if (enter_trigger){
             // 문 개방
 
+            //준식
             // 초음파 센서 9개 전부 트리거 발생 시작
-            for(int i = 0; i<ULTRASONIC_COUNT; i++)
+            for(int i = 0; i < 3; i++)
             {
-              distance = Ultrasonic_MeasureDistance(i);  
+              for(int j = 0; j < 1; j++)
+              {
+                distance = Ultrasonic_MeasureDistance(i*(3) + (j+1));
+                if(distance < 10 && car_presence[i][j] == 0)
+                {
+                    car_presence[i][j] = 1;
+                    enter_trigger = 0;
+                    printf("in car\n");
+                    break;
+                }
+              }
             }
             
             // 만약 초음파 센서 중 하나에서 차가 감지가 되면 car_presence 값 변경
