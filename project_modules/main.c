@@ -152,6 +152,7 @@ int out_trigger = 0;
 //============================ 함수 프로토타입 선언 ============================
 void RCC_Configure(void);
 void GPIO_Configure(void);
+void TIM2_Configure(void);
 void ADC_Configure(void);
 void NVIC_Configure(void);
 void EXTI_Configure(void);
@@ -170,7 +171,10 @@ void EXTI0_IRQHandler(void);
 void EXTI1_IRQHandler(void);
 void USART1_IRQHandler(void);
 
+void delay(int);
+
 //============================ 함수 구현부 ============================
+
 
 void RCC_Configure(void) {
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
@@ -181,6 +185,7 @@ void RCC_Configure(void) {
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_USART1, ENABLE);
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_ADC1, ENABLE);
     RCC_APB1PeriphClockCmd(RCC_APB1Periph_USART2, ENABLE);
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_TIM1, ENABLE);  // TIM1 클럭 활성화
 
     // 타이머 등 필요시 추가
 }
@@ -246,6 +251,18 @@ void GPIO_Configure(void) {
     GPIO_Init(ULTRASONIC_ECHO_PORT, &GPIO_InitStructure);
 }
 
+    void TIM2_Configure(void) {
+      TIM_TimeBaseInitTypeDef TIM_TimeBaseStructure;
+
+      // TIM1 설정 (1μs 단위로 동작하도록 설정)
+      TIM_TimeBaseStructure.TIM_Prescaler = 72 - 1;       // 1MHz로 작동 (72MHz / 72)
+      TIM_TimeBaseStructure.TIM_CounterMode = TIM_CounterMode_Up; // 카운터 증가 모드
+      TIM_TimeBaseStructure.TIM_Period = 0xFFFF;          // 최대 카운터 값 (65535)
+      TIM_TimeBaseStructure.TIM_ClockDivision = TIM_CKD_DIV1; // 기본 클럭 분주 없음
+      TIM_TimeBaseInit(TIM1, &TIM_TimeBaseStructure);
+
+      TIM_Cmd(TIM1, ENABLE); // TIM1 활성화
+    }
 void USART1_Init(void)
 {
     USART_InitTypeDef USART1_InitStructure;
@@ -401,10 +418,43 @@ void Ultrasonic_Trigger(uint8_t sensor_index) {
     for(volatile int i=0; i<720; i++); // 약 10us 가정
     GPIO_ResetBits(ULTRASONIC_TRIG_PORT, ultrasonic_trig_pins[sensor_index]);
 }
+void Trig(uint8_t sensor_index) {
+    GPIO_SetBits(GPIOC, ultrasonic_trig_pins[sensor_index]);  // Trig 핀 HIGH
+    delay_us(10);                      // 10μs 유지
+    GPIO_ResetBits(GPIOC, ultrasonic_trig_pins[sensor_index]); // Trig 핀 LOW
+}
 
 float Ultrasonic_MeasureDistance(uint8_t sensor_index) {
     // 초음파 거리 측정 로직 필요
     // 여기서는 틀만 제공
+
+  uint16_t start_time = 0, stop_time = 0, echo_time = 0;
+    float distance = 0.0;
+
+    Trig(sensor_index); // Trig 신호 송출
+
+    // Echo 핀 HIGH 상태 대기
+    while (GPIO_ReadInputDataBit(GPIOD, ultrasonic_echo_pins[sensor_index]) == 0);
+
+    // Echo 핀 HIGH 시작 시간 기록
+    start_time = TIM_GetCounter(TIM1);
+
+    // Echo 핀이 LOW 상태로 전환될 때까지 대기
+    while (GPIO_ReadInputDataBit(GPIOD, ultrasonic_echo_pins[sensor_index]) == 1);
+
+    // Echo 핀 HIGH 종료 시간 기록
+    stop_time = TIM_GetCounter(TIM1);
+
+    // Echo 핀의 HIGH 지속 시간 계산
+    if (stop_time >= start_time) {
+        echo_time = stop_time - start_time;
+    } else {
+        echo_time = (0xFFFF - start_time) + stop_time; // 타이머 오버플로우 처리
+    }
+
+    // 거리 계산 (단위: cm)
+    distance = (float)(echo_time * 0.0343) / 2.0; // 속도: 343m/s
+
     Ultrasonic_Trigger(sensor_index);
     // Echo 측정 로직 필요
     float distance = 0.0f;
@@ -512,15 +562,17 @@ void EXTI1_IRQHandler(void) {
 
 //============================ 메인 함수 ============================
 int main(void) {
+    float distance;
+  
     SystemInit();
     RCC_Configure();
     GPIO_Configure();
     ADC_Configure();
-    USART_Configure();
+    TIM2_Configure();      // 타이머 초기화 (준식)
     USART1_Init(); // PC
     USART2_Init(); // 블루투스
     NVIC_Configure();
-
+    
     // 초기 LED 상태 (모두 Red)
     LED_SetColor(0, 2);
     LED_SetColor(1, 2);
@@ -530,6 +582,32 @@ int main(void) {
         // 각 초음파 센서(1~9)로 거리 측정하고 일정 거리 이하면 차 있음(1), 아니면 없음(0)
         // sensor_index: 1,2,3  / 4,5,6 / 7,8,9 => 3x3
         // row = (sensor_index-1)/3, col = (sensor_index-1)%3
+        distance = Ultrasonic_MeasureDistance(7);
+        printf("%f\n",distance);
+        if (enter_trigger){
+            // 문 개방
+
+            //준식
+            // 초음파 센서 9개 전부 트리거 발생 시작
+            for(int i = 0; i < 3; i++)
+            {
+              for(int j = 0; j < 1; j++)
+              {
+                distance = Ultrasonic_MeasureDistance(i*(3) + (j+1));
+                if(distance < 10 && car_presence[i][j] == 0)
+                {
+                    car_presence[i][j] = 1;
+                    enter_trigger = 0;
+                    printf("in car\n");
+                    break;
+                }
+              }
+            }
+            
+            // 만약 초음파 센서 중 하나에서 차가 감지가 되면 car_presence 값 변경
+            
+            // 차 유무에 따라 LED 업데이트
+            LED_UpdateByCarPresence();
 
         if (enter_trigger){
             // 문 개방
@@ -540,7 +618,6 @@ int main(void) {
             
             // 차 유무에 따라 LED 업데이트
             LED_UpdateByCarPresence();
-
            
         }
         if (out_trigger){
