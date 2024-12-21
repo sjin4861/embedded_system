@@ -111,6 +111,22 @@ volatile uint8_t bluetooth_command_received = 0;
 // 1: 차 있음, 0: 차 없음
 uint8_t car_presence[3][3] = {0};
 
+// 각 열의 1행이 현재 몇 층에 위치했는가를 나타내는 변수
+/*
+0층이 최초의 위치라고 생각할 것 / 각각 0~2의 값을 가져야함
+
+| o o o |
+| x o x |
+| x x x |
+-> {1, 2, 1}
+
+| o x x |
+| x x x |
+| x x x |
+-> {1, 0, 0}
+*/
+int current_floor[3] = {0, 0, 0}; 
+
 // 스텝모터 시퀀스 (단순 예제)
 const uint8_t step_sequence[8][4] = {
     {1, 0, 0, 0},
@@ -172,6 +188,9 @@ void EXTI1_IRQHandler(void);
 void USART1_IRQHandler(void);
 
 void delay(int);
+void SetColumnFloor(int col, int newFloor);
+void HandleCarEnter(void);
+void HandleOutTrigger(void);
 
 //============================ 함수 구현부 ============================
 
@@ -403,7 +422,7 @@ void LED_UpdateByCarPresence(void) {
         for (int row = 0; row < 3; row++) {
             if (car_presence[row][col] == 1) count++;
         }
-        if (count == 2) {
+        if (count >= 2) {
             LED_SetColor(col, LED_COLOR_RED); // Red
         } else if (count == 0) {
             LED_SetColor(col, LED_COLOR_GREEN); // Green
@@ -553,6 +572,153 @@ void delay(int step){
     for (volatile int i = 0; i < step; i++);
 }
 
+
+/*
+* @brief  특정 열(col)을 newFloor 층(row)으로 이동시키는 함수
+*         - Motor_SetSteps(col, 3, ±1) 호출을 통해 1칸씩 이동
+*         - 2칸 이동 필요 시 3*2 = 6 스텝 등
+*/
+void SetColumnFloor(int col, int newFloor)
+{
+    int diff = newFloor - current_floor[col];
+    if (diff == 0) {
+        // 이미 목표 층에 있으므로 동작 안 함
+        return;
+    }
+    
+    if (diff > 0) {
+        // 위로 이동
+        // diff칸 이동해야 하므로 rotation = 3 * diff (예시)
+        Motor_SetSteps(col, 3 * diff, 1);
+    } else {
+        // 아래로 이동 (diff < 0)
+        // 절댓값(-diff)만큼 칸 이동
+        Motor_SetSteps(col, 3 * (-diff), -1);
+    }
+    
+    // 현재 층 갱신
+    current_floor[col] = newFloor;
+}
+
+/*******************************************************
+ * @brief: 입차 처리 함수
+ *         1) enter_trigger = 1이면 호출
+ *         2) 현재 1층에 있는 칸(=각 col의 current_floor[col])만
+ *            초음파 센서로 측정하여 새 차량 등장 여부 확인
+ *         3) 감지된 차 있으면 car_presence 업데이트 + LED 갱신
+ ******************************************************/
+void HandleCarEnter(void)
+{
+    // 트리거 한번 처리 후에는 클리어
+    enter_trigger = 0;
+
+    // 각 열(col)마다 현재 1층인 행(row)를 파악
+    for (int col = 0; col < 3; col++)
+    {
+        int row = current_floor[col]; // 이 열에서 1층에 놓여있는 행
+        // 초음파 센서 인덱스 (기존 코드에서 1~9로 매핑)
+        uint8_t sensor_index = row * 3 + (col + 1);
+
+        float distance = Ultrasonic_MeasureDistance(sensor_index);
+        // 예: 10cm 이하이면 차가 들어온 것으로 간주
+        if (distance < 10.0f && car_presence[row][col] == 0)
+        {
+            // 새 차 주차
+            car_presence[row][col] = 1;
+            printf("[Enter] Car detected at row=%d, col=%d\n", row, col);
+
+            // LED 상태 갱신
+            LED_UpdateByCarPresence();
+            // 한 칸만 주차 처리 후 종료
+            break;
+        }
+        // 한 1초 있다가 위로 올려버릴까?
+    }
+}
+
+/**
+ * @brief 사람이 출구를 통해 나가는 것이 감지(out_trigger=1)된 경우 호출.
+ *        - 현재 1층(지상)에 위치한 각 열(col)의 칸(row) 중,
+ *          만약 해당 칸에 차량이 있다면 한 칸 위로 올린다.
+ *        - 예: current_floor[col] = r, car_presence[r][col] = 1 → SetColumnFloor(col, r+1)
+ */
+void HandleOutTrigger(void)
+{
+    out_trigger = 0; // 한 번 처리 후 플래그 해제
+
+    // 3개 열에 대해 검사
+    for (int col = 0; col < 3; col++)
+    {
+        int row = current_floor[col];
+        // 현재 1층(지상)에 있는 칸(row,col)에 차가 있다면
+        if (car_presence[row][col] == 1)
+        {
+            // 만약 이미 가장 위(= row=2)라면 더 이상 올릴 수 없다고 가정
+            // row=0 → row=1로, row=1 → row=2로 올리는 식
+            if (row < 2) {
+                int newFloor = row + 1; 
+                SetColumnFloor(col, newFloor);
+                printf("[OutTrigger] Moved column=%d from row=%d to row=%d\n", col, row, newFloor);
+            }
+            else {
+                // row=2면 이미 최상층, 더 이상 올릴 필요가 없다고 가정
+                printf("[OutTrigger] Column=%d is already top floor (row=2), no move.\n", col);
+            }
+        }
+        else {
+            // 차가 없으면 이동할 필요 없음
+            // (원한다면 빈 칸을 더 아래로 내린다거나 다른 로직 가능)
+            printf("[OutTrigger] Column=%d row=%d is empty, no move.\n", col, row);
+        }
+    }
+}
+
+/*******************************************************
+ * @brief: OUT 명령 (예: "OUT 1 2")을 처리하는 함수
+ *         1) row_in, col_in은 1-based 입력
+ *         2) 실제 배열 인덱스는 0-based로 변환
+ *         3) 그 위치에 차가 있으면, 해당 열(col)을
+ *            row층으로 이동 → 차 제거 → 필요시 0층으로 복귀
+ ******************************************************/
+void HandleCarOut(int row_in, int col_in)
+{
+    // 1-based -> 0-based
+    int row = row_in - 1;
+    int col = col_in - 1;
+
+    // 범위 체크
+    if (row < 0 || row > 2 || col < 0 || col > 2) {
+        printf("[OUT] Invalid row/col!\n");
+        return;
+    }
+
+    // 해당 위치에 차가 있는지 확인
+    if (car_presence[row][col] == 1)
+    {
+        // 열(col)이 현재 1층인 행과 원하는 row가 다르다면 이동
+        if (current_floor[col] != row) {
+            SetColumnFloor(col, row);
+        }
+
+        // 차량 제거
+        car_presence[row][col] = 0;
+        printf("[OUT] Car removed at row=%d, col=%d\n", row, col);
+
+        // 필요하면 다시 0층(=row=0)으로 복귀
+        // 프로젝트 요구사항에 따라 다름. 예: 기본적으로 항상 1행(=row=0)을 1층에 두고 싶다면:
+        if (current_floor[col] != 0) {
+            SetColumnFloor(col, 0);
+        }
+
+        // LED 갱신
+        LED_UpdateByCarPresence();
+    }
+    else
+    {
+        printf("[OUT] No car at row=%d, col=%d\n", row, col);
+    }
+}
+
 //============================ 메인 함수 ============================
 int main() {
     float distance;
@@ -577,47 +743,44 @@ int main() {
         // row = (sensor_index-1)/3, col = (sensor_index-1)%3
         printf("%f\n",distance);
         if (enter_trigger){
-            // 문 개방
+            // 문 개방 -> 이거 안 할거임
 
-            //준식
-            // 초음파 센서 9개 전부 트리거 발생 시작
-            for(int i = 0; i < 3; i++)
-            {
-              for(int j = 0; j < 1; j++)
-              {
-                distance = Ultrasonic_MeasureDistance(i*(3) + (j+1));
-                if(distance < 10 && car_presence[i][j] == 0)
-                {
-                    car_presence[i][j] = 1;
-                    enter_trigger = 0;
-                    printf("in car\n");
-                    break;
-                }
-              }
-            }
-            
-            // 만약 초음파 센서 중 하나에서 차가 감지가 되면 car_presence 값 변경
-            
-            // 차 유무에 따라 LED 업데이트
-            LED_UpdateByCarPresence();
+            // 1층에 있는 초음파 센서 트리거링
+            HandleCarEnter();
         }
         if (out_trigger){
             // 사람이 출구를 나가는 것이 감지가 되는 경우
-            
+            HandleOutTrigger();
             // 모터 수직 이동, 방금 들어온 차를 보고 모터 index와 방향을 결정해야함
         }
         // 블루투스 출차 명령
         if (bluetooth_command_received) {
             bluetooth_command_received = 0;
-            if (strcmp((char*)bluetooth_rx_buffer, "OUT") == 0) {
-                // 일단 테스트를 위해 차량 하강
-                Motor_SetSteps(1, 3, -1); // direction = -1 (역방향)
-
-                // 실제 구현에서는 주차 공간을 토대로 판단해서 방향을 결정해야함.
+            // 예: "OUT 1 2" → row=1, col=2 → 1-based
+            // 문자열 파싱 로직 (간단 예시)
+            // 실제론 strtok, sscanf 등 사용 가능
+            if (strncmp((char*)bluetooth_rx_buffer, "OUT", 3) == 0) 
+            {
+                // 형식: "OUT r c"
+                int row_cmd, col_cmd;
+                int matches = sscanf((char*)bluetooth_rx_buffer+3, "%d %d", &row_cmd, &col_cmd);
+                if (matches == 2) {
+                    // 예: OUT 1 1
+                    HandleCarOut(row_cmd, col_cmd);
+                }
+                else {
+                    printf("[BT] Invalid OUT command format!\n");
+                }
+            }
+            else if (strncmp((char*)bluetooth_rx_buffer, "TEST", 4) == 0) 
+            {
+                // 임의 테스트 명령 예시
+                printf("[BT] TEST command received.\n");
+            }
+            else {
+                printf("[BT] Unknown command: %s\n", bluetooth_rx_buffer);
             }
         }
         delay(1000000);
     }
-
-    Motor_SetSteps(1, 3, 1);
 }
