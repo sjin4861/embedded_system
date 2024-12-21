@@ -561,7 +561,7 @@ void EXTI1_IRQHandler(void) {
 }
 
 //============================ 메인 함수 ============================
-int main(void) {
+int main() {
     float distance;
   
     SystemInit();
@@ -608,7 +608,7 @@ int main(void) {
             
             // 차 유무에 따라 LED 업데이트
             LED_UpdateByCarPresence();
-
+        }
         if (enter_trigger){
             // 문 개방
 
