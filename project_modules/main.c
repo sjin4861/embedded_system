@@ -435,9 +435,6 @@ void map_sensor_to_rc(int sensor, int *r, int *c) {
     }
 }
 
-
-// 이런 식으로 3,4,7,8,9,10,11에 대한 EXTI 핸들러도 동일한 패턴으로 구현
-// 실제로는 각 센서 echo 핀에 맞는 EXTI_LineX를 사용해야 함
 // USART1 IRQ (PC와 연결)
 void USART1_IRQHandler() {
     uint16_t word;
@@ -452,7 +449,7 @@ void USART1_IRQHandler() {
 // USART2 IRQ (블루투스 모듈 연결)
 void USART2_IRQHandler() {
     uint16_t word;
-    if(USART_GetITStatus(USART2,USART_IT_RXNE)!=RESET){
+    if(USART_GetITStatus(USART2, USART_IT_RXNE)!=RESET){
         word = USART_ReceiveData(USART2);
         
         // 명령 버퍼에 저장
@@ -473,8 +470,6 @@ void USART2_IRQHandler() {
         USART_ClearITPendingBit(USART2,USART_IT_RXNE);
     }
 }
-
-// 압력센서 인터럽트 핸들러 만들기
 
 void LED_UpdateByCarPresence(void) {
     for (int col = 0; col < 3; col++) {
@@ -509,6 +504,21 @@ void EXTI1_IRQHandler(void) {
         // 출구 압력센서 감지
         out_trigger = 1;
         EXTI_ClearITPendingBit(EXTI_Line1);
+    }
+}
+
+// USART2로 문자열 전송
+void USART2_SendString(const char *str) {
+    while (*str) {
+        while (USART_GetFlagStatus(USART2, USART_FLAG_TXE) == RESET);
+        USART_SendData(USART2, *str++);
+    }
+}
+// USART1로 문자열 전송
+void USART1_SendString(const char *str) {
+    while (*str) {
+        while (USART_GetFlagStatus(USART1, USART_FLAG_TXE) == RESET);
+        USART_SendData(USART1, *str++);
     }
 }
 
@@ -551,18 +561,28 @@ int main(void) {
         }
         // 블루투스 출차 명령
         if (bluetooth_command_received) {
-            bluetooth_command_received = 0;
-            if (strcmp((char*)bluetooth_rx_buffer, "OUT") == 0) {
-                // 일단 테스트를 위해 차량 하강
-                Motor_SetSteps(1, 13, -1); // direction = -1 (역방향)
+            bluetooth_command_received = 0; // 플래그 해제
 
-                // 실제 구현에서는 주차 공간을 토대로 판단해서 방향을 결정해야함.
-                // 차량 하강 (예: 모터1 반대방향 구현 필요)
-                Motor_SetSteps(1, 13, -1); // direction = -1 (역방향)
+            if (strcmp(bluetooth_rx_buffer, "SHOW") == 0) {
+                // car_presence 배열 정보를 문자열로 만들어서
+                // PC(USART1)와 블루투스(USART2) 모두에게 전송
+                for (int row = 0; row < 3; row++) {
+                    char msg[50];
+                    sprintf(msg, "Row %d: %d %d %d\r\n", row,
+                            car_presence[row][0],
+                            car_presence[row][1],
+                            car_presence[row][2]);
+                    USART1_SendString(msg);  // PC 전송
+                    USART2_SendString(msg);  // 블루투스 전송
+                }
             }
+            else if (strcmp(bluetooth_rx_buffer, "OUT") == 0) {
+                // OUT 명령 로직
+                // 모터 구동 등
+            }
+            // 그 외 명령 ...
         }
         delay(1000000);
     }
-
     Motor_SetSteps(1, 3, 1);
 }
