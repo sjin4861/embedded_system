@@ -44,12 +44,12 @@
    신호등 2 RED   : PB8
    ----------------------------------------------------------------
    블루투스 모듈 핀 매핑 (USART1 사용)
-   TX 핀: PA9 (USART1_RX)
-   RX 핀: PA10 (USART1_TX)
+   TX 핀: PA9 (USART1_TX)
+   RX 핀: PA10 (USART1_RX)
 
    (USART2 사용)
-   TX 핀: PD5 (USART1_RX)
-   RX 핀: PD6 (USART1_TX)
+   TX 핀: PD5 (USART2_TX)
+   RX 핀: PD6 (USART2_RX)
    ----------------------------------------------------------------
    스텝모터 모듈 핀 매핑
 
@@ -153,24 +153,21 @@ int out_trigger = 0;
 void RCC_Configure(void);
 void GPIO_Configure(void);
 void ADC_Configure(void);
-void USART_Configure(void);
 void NVIC_Configure(void);
 void EXTI_Configure(void);
+void USART1_Init(void);
 
-void set_led_color(uint8_t led_num, uint8_t color);
-void update_leds_based_on_car_presence(void);
+void LED_SetColor(uint8_t led_num, uint8_t color);
+void LED_UpdateByCarPresence(void);
+void Motor_SetSteps(int motor_index, int rotation, int direction);
 
-uint16_t read_adc_value(uint8_t channel);
-
-void step_motor_init(void);
-void set_rpm(int motor_index, int rpm, int direction);
-
-float measure_distance(uint8_t sensor_index);
-void trigger_ultrasonic(uint8_t sensor_index);
+float Ultrasonic_MeasureDistance(uint8_t sensor_index);
+void Ultrasonic_Trigger(uint8_t sensor_index);
 
 void Bluetooth_SendString(char *str);
 
 void EXTI0_IRQHandler(void);
+void EXTI1_IRQHandler(void);
 void USART1_IRQHandler(void);
 
 void delay(int);
@@ -249,17 +246,6 @@ void GPIO_Configure(void) {
     }
     GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN_FLOATING;
     GPIO_Init(ULTRASONIC_ECHO_PORT, &GPIO_InitStructure);
-
-    // USART1 TX: PA9 (AF_PP), USART1 RX: PA10 (IN_FLOATING)
-    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_9; 
-    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
-    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP;
-    GPIO_Init(GPIOA, &GPIO_InitStructure);
-    
-    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_10;
-    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
-    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN_FLOATING;
-    GPIO_Init(GPIOA, &GPIO_InitStructure);
 }
 
 void USART1_Init(void)
@@ -323,68 +309,19 @@ void EXTI_Configure(void)
 {
     EXTI_InitTypeDef EXTI_InitStructure;
 
-    // 공통 설정
     EXTI_InitStructure.EXTI_Mode = EXTI_Mode_Interrupt;
-    // Echo 신호는 Rising 엣지에서 타이머 시작, Falling 엣지에서 타이머 정지를 위해 
-    // Rising, Falling 모두 감지할 수 있도록 EXTI_Trigger_Rising_Falling 사용 가능.
-    // 필요에 따라 EXTI_Trigger_Rising, EXTI_Trigger_Falling를 선택하세요.
-    EXTI_InitStructure.EXTI_Trigger = EXTI_Trigger_Rising_Falling;
+    EXTI_InitStructure.EXTI_Trigger = EXTI_Trigger_Falling; // 예: 압력센서 신호가 LOW로 떨어질 때 감지
     EXTI_InitStructure.EXTI_LineCmd = ENABLE;
 
-    // Sensor 1: PD3 -> EXTI_Line3
-    GPIO_EXTILineConfig(GPIO_PortSourceGPIOD, GPIO_PinSource3);
-    EXTI_InitStructure.EXTI_Line = EXTI_Line3;
+    // 압력센서 0 : PA0 -> EXTI_Line0
+    GPIO_EXTILineConfig(GPIO_PortSourceGPIOA, GPIO_PinSource0);
+    EXTI_InitStructure.EXTI_Line = EXTI_Line0;
     EXTI_Init(&EXTI_InitStructure);
 
-    // Sensor 2: PD4 -> EXTI_Line4
-    GPIO_EXTILineConfig(GPIO_PortSourceGPIOD, GPIO_PinSource4);
-    EXTI_InitStructure.EXTI_Line = EXTI_Line4;
-    EXTI_Init(&EXTI_InitStructure);
-
-    // Sensor 3: PD7 -> EXTI_Line7
-    GPIO_EXTILineConfig(GPIO_PortSourceGPIOD, GPIO_PinSource7);
-    EXTI_InitStructure.EXTI_Line = EXTI_Line7;
-    EXTI_Init(&EXTI_InitStructure);
-
-    // Sensor 4: PD8 -> EXTI_Line8
-    GPIO_EXTILineConfig(GPIO_PortSourceGPIOD, GPIO_PinSource8);
-    EXTI_InitStructure.EXTI_Line = EXTI_Line8;
-    EXTI_Init(&EXTI_InitStructure);
-
-    // Sensor 5: PD9 -> EXTI_Line9
-    GPIO_EXTILineConfig(GPIO_PortSourceGPIOD, GPIO_PinSource9);
-    EXTI_InitStructure.EXTI_Line = EXTI_Line9;
-    EXTI_Init(&EXTI_InitStructure);
-
-    // Sensor 6: PD10 -> EXTI_Line10
-    GPIO_EXTILineConfig(GPIO_PortSourceGPIOD, GPIO_PinSource10);
-    EXTI_InitStructure.EXTI_Line = EXTI_Line10;
-    EXTI_Init(&EXTI_InitStructure);
-
-    // Sensor 7: PD11 -> EXTI_Line11
-    GPIO_EXTILineConfig(GPIO_PortSourceGPIOD, GPIO_PinSource11);
-    EXTI_InitStructure.EXTI_Line = EXTI_Line11;
-    EXTI_Init(&EXTI_InitStructure);
-
-    // Sensor 8: PD12 -> EXTI_Line12
-    GPIO_EXTILineConfig(GPIO_PortSourceGPIOD, GPIO_PinSource12);
-    EXTI_InitStructure.EXTI_Line = EXTI_Line12;
-    EXTI_Init(&EXTI_InitStructure);
-
-    // Sensor 9: PD13 -> EXTI_Line13
-    GPIO_EXTILineConfig(GPIO_PortSourceGPIOD, GPIO_PinSource13);
-    EXTI_InitStructure.EXTI_Line = EXTI_Line13;
-    EXTI_Init(&EXTI_InitStructure);
-
-    // Sensor 10: PD14 -> EXTI_Line14
-    GPIO_EXTILineConfig(GPIO_PortSourceGPIOD, GPIO_PinSource14);
-    EXTI_InitStructure.EXTI_Line = EXTI_Line14;
-    EXTI_Init(&EXTI_InitStructure);
-
-    // Sensor 11: PD15 -> EXTI_Line15
-    GPIO_EXTILineConfig(GPIO_PortSourceGPIOD, GPIO_PinSource15);
-    EXTI_InitStructure.EXTI_Line = EXTI_Line15;
-    EXTI_Init(&EXTI_InitStructure);
+    // 압력센서 1 : PA1 -> EXTI_Line1
+    GPIO_EXTILineConfig(GPIO_PortSourceGPIOA, GPIO_PinSource1);
+    EXTI_InitStructure.EXTI_Line = EXTI_Line1;
+    EXTI_Init(&EXTI_InitStructure);EXTI0_IRQHandler
 }
 
 void NVIC_Configure(void) {
@@ -396,7 +333,7 @@ void NVIC_Configure(void) {
     NVIC_EnableIRQ(USART1_IRQn);
     NVIC_InitStructure.NVIC_IRQChannel = USART1_IRQn;
     NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0x00; 
-    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0x00; 
+    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0x00;
     NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
     NVIC_Init(&NVIC_InitStructure);
 
@@ -407,11 +344,9 @@ void NVIC_Configure(void) {
     NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0x00; 
     NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
     NVIC_Init(&NVIC_InitStructure);
-
-    // 필요시 EXTI 인터럽트 추가
 }
 
-void set_led_color(uint8_t led_num, uint8_t color) {
+void LED_SetColor(uint8_t led_num, uint8_t color) {
     // led_num: 0,1,2 / color: 0=Green,1=Yellow,2=Red
     switch (led_num) {
         case 0:
@@ -446,34 +381,23 @@ void set_led_color(uint8_t led_num, uint8_t color) {
 // - 모든 칸이 차 있으면(Red)
 // - 모든 칸이 비어있으면(Green)
 // - 그 외(Yellow)
-void update_leds_based_on_car_presence(void) {
+void LED_UpdateByCarPresence(void) {
     for (int col = 0; col < 3; col++) {
         int count = 0;
         for (int row = 0; row < 3; row++) {
             if (car_presence[row][col] == 1) count++;
         }
         if (count == 3) {
-            set_led_color(col, LED_COLOR_RED); // Red
+            LED_SetColor(col, LED_COLOR_RED); // Red
         } else if (count == 0) {
-            set_led_color(col, LED_COLOR_GREEN); // Green
+            LED_SetColor(col, LED_COLOR_GREEN); // Green
         } else {
-            set_led_color(col, LED_COLOR_YELLOW); // Yellow
+            LED_SetColor(col, LED_COLOR_YELLOW); // Yellow
         }
     }
 }
-//준식이
-uint16_t read_adc_value(uint8_t channel) {
-    ADC_RegularChannelConfig(ADC1, channel, 1, ADC_SampleTime_28Cycles5);
-    ADC_SoftwareStartConvCmd(ADC1, ENABLE);
-    while(!ADC_GetFlagStatus(ADC1, ADC_FLAG_EOC));
-    return ADC_GetConversionValue(ADC1);
-}
 
-void step_motor_init(void) {
-    // 필요시 추가 초기화
-}
-
-void set_steps(int motor_index, int rotation, int direction) {
+void Motor_SetSteps(int motor_index, int rotation, int direction) {
     uint32_t microseconds_per_minute = 60000000;
     uint32_t total_steps = 4096;  // 1회전당 스텝 수
     uint32_t total_rotation = total_steps * rotation; // 총회전 수
@@ -494,16 +418,16 @@ void set_steps(int motor_index, int rotation, int direction) {
     }
 }
 
-void trigger_ultrasonic(uint8_t sensor_index) {
+void Ultrasonic_Trigger(uint8_t sensor_index) {
     GPIO_SetBits(ULTRASONIC_TRIG_PORT, ultrasonic_trig_pins[sensor_index]);
     for(volatile int i=0; i<720; i++); // 약 10us 가정
     GPIO_ResetBits(ULTRASONIC_TRIG_PORT, ultrasonic_trig_pins[sensor_index]);
 }
 
-float measure_distance(uint8_t sensor_index) {
+float Ultrasonic_MeasureDistance(uint8_t sensor_index) {
     // 초음파 거리 측정 로직 필요
     // 여기서는 틀만 제공
-    trigger_ultrasonic(sensor_index);
+    Ultrasonic_Trigger(sensor_index);
     // Echo 측정 로직 필요
     float distance = 0.0f;
     return distance;
@@ -530,103 +454,6 @@ void map_sensor_to_rc(int sensor, int *r, int *c) {
         default:*r=-1;*c=-1;break;
     }
 }
-
-// 초음파 센서 인터럽트 핸들러 예제 (센서 Echo 핀 Rising/Falling 엣지 감지)
-// 실제로는 Echo 신호의 Rising 시각 기록, Falling시각 기록 후 거리 계산 필요
-// 여기서는 단순히 인터럽트가 발생하면 distance를 측정했다고 가정하고
-// 그 결과에 따라 car_presence 설정 예제 코드만 제시
-void EXTI1_IRQHandler(void) { // 예: 센서1 Echo 핸들러
-    if (EXTI_GetITStatus(EXTI_Line1) != RESET) {
-        int r,c;
-        float dist = measure_distance(1);
-        map_sensor_to_rc(1,&r,&c);
-        if (r>=0 && c>=0) {
-            if (dist < 20.0f && dist > 0.0f) car_presence[r][c] = 1;
-            else car_presence[r][c] = 0;
-        }
-        EXTI_ClearITPendingBit(EXTI_Line1);
-    }
-}
-
-// 이거 EXTI 
-void EXTI4_IRQHandler(void) {
-    if (EXTI_GetITStatus(EXTI_Line4) != RESET) {
-        float dist = measure_distance(4);
-        int r, c;
-        map_sensor_to_rc(7, &r, &c);
-        if (r >= 0 && c >= 0) {
-            if (dist < DISTANCE_THRESHOLD && dist > 0.0f) car_presence[r][c] = 1;
-            else car_presence[r][c] = 0;
-        }
-        EXTI_ClearITPendingBit(EXTI_Line4);
-    }
-}
-
-void EXTI7_IRQHandler(void) {
-    if (EXTI_GetITStatus(EXTI_Line7) != RESET) {
-        float dist = measure_distance(7);
-        int r, c;
-        map_sensor_to_rc(7, &r, &c);
-        if (r >= 0 && c >= 0) {
-            if (dist < DISTANCE_THRESHOLD && dist > 0.0f) car_presence[r][c] = 1;
-            else car_presence[r][c] = 0;
-        }
-        EXTI_ClearITPendingBit(EXTI_Line7);
-    }
-}
-
-void EXTI8_IRQHandler(void) {
-    if (EXTI_GetITStatus(EXTI_Line8) != RESET) {
-        float dist = measure_distance(8);
-        int r, c;
-        map_sensor_to_rc(8, &r, &c);
-        if (r >= 0 && c >= 0) {
-            if (dist < DISTANCE_THRESHOLD && dist > 0.0f) car_presence[r][c] = 1;
-            else car_presence[r][c] = 0;
-        }
-        EXTI_ClearITPendingBit(EXTI_Line8);
-    }
-}
-
-void EXTI9_IRQHandler(void) {
-    if (EXTI_GetITStatus(EXTI_Line9) != RESET) {
-        float dist = measure_distance(9);
-        int r, c;
-        map_sensor_to_rc(9, &r, &c);
-        if (r >= 0 && c >= 0) {
-            if (dist < DISTANCE_THRESHOLD && dist > 0.0f) car_presence[r][c] = 1;
-            else car_presence[r][c] = 0;
-        }
-        EXTI_ClearITPendingBit(EXTI_Line9);
-    }
-}
-
-void EXTI10_IRQHandler(void) {
-    if (EXTI_GetITStatus(EXTI_Line10) != RESET) {
-        float dist = measure_distance(10);
-        int r, c;
-        map_sensor_to_rc(10, &r, &c);
-        if (r >= 0 && c >= 0) {
-            if (dist < DISTANCE_THRESHOLD && dist > 0.0f) car_presence[r][c] = 1;
-            else car_presence[r][c] = 0;
-        }
-        EXTI_ClearITPendingBit(EXTI_Line10);
-    }
-}
-
-void EXTI11_IRQHandler(void) {
-    if (EXTI_GetITStatus(EXTI_Line11) != RESET) {
-        float dist = measure_distance(11);
-        int r, c;
-        map_sensor_to_rc(11, &r, &c);
-        if (r >= 0 && c >= 0) {
-            if (dist < DISTANCE_THRESHOLD && dist > 0.0f) car_presence[r][c] = 1;
-            else car_presence[r][c] = 0;
-        }
-        EXTI_ClearITPendingBit(EXTI_Line11);
-    }
-}
-
 
 
 // 이런 식으로 3,4,7,8,9,10,11에 대한 EXTI 핸들러도 동일한 패턴으로 구현
@@ -667,26 +494,42 @@ void USART2_IRQHandler() {
     }
 }
 
-// 압력센서 인터럽트 만들기
+// 압력센서 인터럽트 핸들러 만들기
 
-void update_leds_based_on_car_presence(void) {
+void LED_UpdateByCarPresence(void) {
     for (int col = 0; col < 3; col++) {
         int count = 0;
         for (int row = 0; row < 3; row++) {
             if (car_presence[row][col] == 1) count++;
         }
         if (count == 2) {
-            set_led_color(col, LED_COLOR_RED); // Red
+            LED_SetColor(col, LED_COLOR_RED); // Red
         } else if (count == 0) {
-            set_led_color(col, LED_COLOR_GREEN); // Green
+            LED_SetColor(col, LED_COLOR_GREEN); // Green
         } else {
-            set_led_color(col, LED_COLOR_YELLOW); // Yellow
+            LED_SetColor(col, LED_COLOR_YELLOW); // Yellow
         }
     }
 }
 
 void delay(int step){
     for (volatile int i = 0; i < step; i++);
+}
+
+void EXTI0_IRQHandler(void) {
+    if (EXTI_GetITStatus(EXTI_Line0) != RESET) {
+        // 입구 압력센서 감지
+        enter_trigger = 1;
+        EXTI_ClearITPendingBit(EXTI_Line0);
+    }
+}
+
+void EXTI1_IRQHandler(void) {
+    if (EXTI_GetITStatus(EXTI_Line1) != RESET) {
+        // 출구 압력센서 감지
+        out_trigger = 1;
+        EXTI_ClearITPendingBit(EXTI_Line1);
+    }
 }
 
 //============================ 메인 함수 ============================
@@ -698,12 +541,11 @@ int main(void) {
     USART1_Init(); // PC
     USART2_Init(); // 블루투스
     NVIC_Configure();
-    step_motor_init();
 
     // 초기 LED 상태 (모두 Red)
-    set_led_color(0, 2);
-    set_led_color(1, 2);
-    set_led_color(2, 2);
+    LED_SetColor(0, 2);
+    LED_SetColor(1, 2);
+    LED_SetColor(2, 2);
 
     while(1) {
         // 각 초음파 센서(1~9)로 거리 측정하고 일정 거리 이하면 차 있음(1), 아니면 없음(0)
@@ -718,7 +560,7 @@ int main(void) {
             // 만약 초음파 센서 중 하나에서 차가 감지가 되면 car_presence 값 변경
             
             // 차 유무에 따라 LED 업데이트
-            update_leds_based_on_car_presence();
+            LED_UpdateByCarPresence();
 
            
         }
@@ -732,15 +574,15 @@ int main(void) {
             bluetooth_command_received = 0;
             if (strcmp((char*)bluetooth_rx_buffer, "OUT") == 0) {
                 // 일단 테스트를 위해 차량 하강
-                set_rpm(1, 13, -1); // direction = -1 (역방향)
+                Motor_SetSteps(1, 13, -1); // direction = -1 (역방향)
 
                 // 실제 구현에서는 주차 공간을 토대로 판단해서 방향을 결정해야함.
                 // 차량 하강 (예: 모터1 반대방향 구현 필요)
-                set_steps(1, 13, -1); // direction = -1 (역방향)
+                Motor_SetSteps(1, 13, -1); // direction = -1 (역방향)
             }
         }
         delay(1000000);
     }
 
-    set_steps(1, 3, 1);
+    Motor_SetSteps(1, 3, 1);
 }
