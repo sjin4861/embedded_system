@@ -146,7 +146,7 @@ uint16_t motor_pins[4][4] = {
 };
 
 // 압력센서 트리거
-int enter_trigger = 1;
+int enter_trigger = 0;
 int out_trigger = 0;
 
 //============================ 함수 프로토타입 선언 ============================
@@ -409,10 +409,9 @@ void Motor_SetSteps(int motor_index, int rotation, int direction) {
                 GPIOE->BRR = motor_pins[motor_index][pin];
         }
         // 딜레이
-        delay_us(idle_time);
+        delay(idle_time);
     }
 }
-
 
 void Ultrasonic_Trigger(uint8_t sensor_index) {
     GPIO_SetBits(ULTRASONIC_TRIG_PORT, ultrasonic_trig_pins[sensor_index]);
@@ -428,6 +427,7 @@ void Trig(uint8_t sensor_index) {
 float Ultrasonic_MeasureDistance(uint8_t sensor_index) {
     // 초음파 거리 측정 로직 필요
     // 여기서는 틀만 제공
+
   uint16_t start_time = 0, stop_time = 0, echo_time = 0;
     float distance = 0.0;
 
@@ -455,6 +455,9 @@ float Ultrasonic_MeasureDistance(uint8_t sensor_index) {
     // 거리 계산 (단위: cm)
     distance = (float)(echo_time * 0.0343) / 2.0; // 속도: 343m/s
 
+    Ultrasonic_Trigger(sensor_index);
+    // Echo 측정 로직 필요
+    float distance = 0.0f;
     return distance;
 }
 
@@ -574,7 +577,7 @@ int main(void) {
     LED_SetColor(0, 2);
     LED_SetColor(1, 2);
     LED_SetColor(2, 2);
-    
+
     while(1) {
         // 각 초음파 센서(1~9)로 거리 측정하고 일정 거리 이하면 차 있음(1), 아니면 없음(0)
         // sensor_index: 1,2,3  / 4,5,6 / 7,8,9 => 3x3
@@ -606,6 +609,15 @@ int main(void) {
             // 차 유무에 따라 LED 업데이트
             LED_UpdateByCarPresence();
 
+        if (enter_trigger){
+            // 문 개방
+
+            // 초음파 센서 9개 전부 트리거 발생 시작
+            
+            // 만약 초음파 센서 중 하나에서 차가 감지가 되면 car_presence 값 변경
+            
+            // 차 유무에 따라 LED 업데이트
+            LED_UpdateByCarPresence();
            
         }
         if (out_trigger){
