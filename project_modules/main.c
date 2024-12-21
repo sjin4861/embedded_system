@@ -170,8 +170,6 @@ void EXTI0_IRQHandler(void);
 void EXTI1_IRQHandler(void);
 void USART1_IRQHandler(void);
 
-void delay(int);
-
 //============================ 함수 구현부 ============================
 
 void RCC_Configure(void) {
@@ -518,6 +516,7 @@ int main(void) {
     RCC_Configure();
     GPIO_Configure();
     ADC_Configure();
+    USART_Configure();
     USART1_Init(); // PC
     USART2_Init(); // 블루투스
     NVIC_Configure();
