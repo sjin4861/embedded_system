@@ -763,7 +763,7 @@ int main() {
 
     while(1) {
         adc_value_0 = Read_ADC_Channel(ADC_Channel_0);
-        adc_Value_1 = Read_ADC_Channel(ADC_Channel_1);
+        adc_value_1 = Read_ADC_Channel(ADC_Channel_1);
 
         if (adc_value_0 > 200) {
             enter_trigger = 1;
