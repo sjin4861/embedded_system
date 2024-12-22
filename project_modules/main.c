@@ -790,23 +790,9 @@ int main() {
     LED_SetColor(1, LED_COLOR_GREEN);
     LED_SetColor(2, LED_COLOR_GREEN);
     
-    while(1) {
-    }
+    delay(10000000);
 
     while(1) {
-        adc_value_0 = Read_ADC_Channel(ADC_Channel_0);
-        adc_value_1 = Read_ADC_Channel(ADC_Channel_1);
-        printf("adc_value_0 : %d\n", adc_value_0);
-        printf("adc_value_1 : %d\n", adc_value_1);
-
-        if (adc_value_0 > 600) {
-            enter_trigger = 1;
-        }
-
-        if (adc_value_1 > 600) {
-            out_trigger = 1;
-        }
-
         // 각 초음파 센서(1~9)로 거리 측정하고 일정 거리 이하면 차 있음(1), 아니면 없음(0)
         // sensor_index: 1,2,3  / 4,5,6 / 7,8,9 => 3x3
         // row = (sensor_index-1)/3, col = (sensor_index-1)%3
