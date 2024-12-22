@@ -169,6 +169,7 @@ int out_trigger = 0;
 void RCC_Configure(void);
 void GPIO_Configure(void);
 void TIM1_Configure(void);
+void TIM2_Configure(void);
 void ADC_Configure(void);
 void NVIC_Configure(void);
 void EXTI_Configure(void);
@@ -291,6 +292,31 @@ void TIM1_Configure(void) {
     TIM_Cmd(TIM1, ENABLE); // TIM1 활성화
 }
 
+void TIM2_Configure(void)
+{
+    TIM_TimeBaseInitTypeDef TIM_TimeBaseStructure;
+
+    // 1) RCC에서 TIM2 클록 활성화
+    RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2, ENABLE);
+
+    // 2) TIM2 기본 설정
+    //    주파수: (APB1=36MHz) / (Prescaler+1) = 1kHz
+    //    Period(ARR)=1000 → 1초마다 오버플로
+    TIM_TimeBaseStructure.TIM_Prescaler = 36000 - 1;  // 프리스케일러 값
+    TIM_TimeBaseStructure.TIM_CounterMode = TIM_CounterMode_Up; 
+    TIM_TimeBaseStructure.TIM_Period = 1000 - 1;      // 1초 주기 (1kHz * 1000)
+    TIM_TimeBaseStructure.TIM_ClockDivision = TIM_CKD_DIV1; 
+    TIM_TimeBaseStructure.TIM_RepetitionCounter = 0;  // TIM2에는 사용 안 함
+    TIM_TimeBaseInit(TIM2, &TIM_TimeBaseStructure);
+
+    // 3) TIM 업데이트 이벤트(오버플로) 인터럽트 허용
+    TIM_ITConfig(TIM2, TIM_IT_Update, ENABLE);
+
+    // 4) TIM2 시작
+    TIM_Cmd(TIM2, ENABLE);
+}
+
+
 void USART1_Init(void)
 {
     USART_InitTypeDef USART1_InitStructure;
@@ -386,6 +412,19 @@ void NVIC_Configure(void) {
     NVIC_Init(&NVIC_InitStructure);
 
 }
+
+// TIM2 인터럽트 설정
+void NVIC_TIM2_Configure(void)
+{
+    NVIC_InitTypeDef NVIC_InitStructure;
+    
+    NVIC_InitStructure.NVIC_IRQChannel = TIM2_IRQn;
+    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0; // 우선순위
+    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
+    NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+    NVIC_Init(&NVIC_InitStructure);
+}
+
 
 void LED_SetColor(uint8_t led_num, uint8_t color) {
     // led_num: 0,1,2 / color: 0=Green,1=Yellow,2=Red
@@ -575,26 +614,25 @@ void USART2_IRQHandler() {
         USART_ClearITPendingBit(USART2,USART_IT_RXNE);
     }
 }
-// ADC 변환 완료 ISR
-void ADC1_2_IRQHandler(void) {
-    if (ADC_GetITStatus(ADC1, ADC_IT_EOC) != RESET) {
-        static uint16_t adc_values[2];
-        
-        // 첫 번째 변환 결과 (채널 0) 읽기
-        adc_values[0] = ADC_GetConversionValue(ADC1);  
-        // 두 번째 변환 결과 (채널 1) 읽기
-        adc_values[1] = ADC_GetConversionValue(ADC1);  
 
-        // 예시: 임계값 3000 초과 시 "차량 감지"로 간주
-        if (adc_values[0] > 3000) {
+void TIM2_IRQHandler(void) {
+    volatile uint16_t adc_value_0 = 0, adc_value_1 = 0;
+
+    if (TIM_GetITStatus(TIM2, TIM_IT_Update) != RESET)
+    {
+        TIM_ClearITPendingBit(TIM2, TIM_IT_Update);
+
+        // 1초에 한 번씩 압력 센서(ADC) 읽기
+        adc_value_0 = Read_ADC_Channel(ADC_Channel_0);
+        adc_value_1 = Read_ADC_Channel(ADC_Channel_1);
+
+        // 여기서 임계값 비교 등 간단한 처리도 할 수 있음
+        if (adc_value_0 > 600) {
             enter_trigger = 1;
         }
-        if (adc_values[1] > 3000) {
+        if (adc_value_1 > 600) {
             out_trigger = 1;
         }
-
-        // 인터럽트 플래그 클리어
-        ADC_ClearITPendingBit(ADC1, ADC_IT_EOC);
     }
 }
 
@@ -619,19 +657,11 @@ void SetColumnFloor(int col, int newFloor)
     if (diff > 0) {
         // 위로 이동
         // diff칸 이동해야 하므로 rotation = 3 * diff (예시)
-<<<<<<< HEAD
-        Motor_SetSteps(col, 3 * diff, -1);
-    } else {
-        // 아래로 이동 (diff < 0)
-        // 절댓값(-diff)만큼 칸 이동
-        Motor_SetSteps(col, 3 * (-diff), 1);
-=======
         Motor_SetSteps(col+1, 3 * diff, -1);
     } else {
         // 아래로 이동 (diff < 0)
         // 절댓값(-diff)만큼 칸 이동
         Motor_SetSteps(col+1, 3 * (-diff), 1);
->>>>>>> remotes/origin/bluetooth
     }
     
     // 현재 층 갱신
@@ -657,15 +687,6 @@ void HandleCarEnter(void)
           // 초음파 센서 인덱스 (기존 코드에서 1~9로 매핑)
           uint8_t sensor_index = row * 3 + (col + 1);
 
-<<<<<<< HEAD
-        float distance = Ultrasonic_MeasureDistance(sensor_index);
-        // 예: 5cm 이하이면 차가 들어온 것으로 간주
-        if (distance < 5.0f && car_presence[row][col] == 0)
-        {
-            // 새 차 주차
-            car_presence[row][col] = 1;
-            printf("[Enter] Car detected at row=%d, col=%d\n", row, col);
-=======
           float distance = Ultrasonic_MeasureDistance(sensor_index);
           printf("row, col, distance : %d, %d, %.2f\n", row, col, distance);
           // 예: 5cm 이하이면 차가 들어온 것으로 간주
@@ -674,7 +695,6 @@ void HandleCarEnter(void)
               // 새 차 주차
               car_presence[row][col] = 1;
               printf("[Enter] Car detected at row=%d, col=%d\n", row, col);
->>>>>>> remotes/origin/bluetooth
 
               // LED 상태 갱신
               LED_UpdateByCarPresence();
@@ -782,6 +802,8 @@ int main() {
     USART1_Init(); // PC
     USART2_Init(); // 블루투스
     NVIC_Configure();
+    TIM2_Configure(); // 1초마다 압력센서 읽기
+    NVIC_TIM2_Configure();  // TIM2 NVIC 설정
     
     // 초기 LED 상태 (모두 GREEN)
     LED_SetColor(0, LED_COLOR_GREEN);
@@ -789,38 +811,18 @@ int main() {
     LED_SetColor(2, LED_COLOR_GREEN);
 
     while(1) {
-        adc_value_0 = Read_ADC_Channel(ADC_Channel_0);
-        adc_value_1 = Read_ADC_Channel(ADC_Channel_1);
-        printf("adc_value_0 : %d\n", adc_value_0);
-        printf("adc_value_1 : %d\n", adc_value_1);
-
-<<<<<<< HEAD
-        if (adc_value_0 > 300) {
-            enter_trigger = 1;
-        }
-
-        if (adc_value_1 > 300) {
-=======
-        if (adc_value_0 > 400) {
-            enter_trigger = 1;
-        }
-
-        if (adc_value_1 > 400) {
->>>>>>> remotes/origin/bluetooth
-            out_trigger = 1;
-        }
-
         // 각 초음파 센서(1~9)로 거리 측정하고 일정 거리 이하면 차 있음(1), 아니면 없음(0)
         // sensor_index: 1,2,3  / 4,5,6 / 7,8,9 => 3x3
         // row = (sensor_index-1)/3, col = (sensor_index-1)%3
         if (enter_trigger){
             // 문 개방 -> 이거 안 할거임
-
+            enter_trigger = 0;
             // 1층에 있는 초음파 센서 트리거링
             HandleCarEnter();
         }
         if (out_trigger){
             // 사람이 출구를 나가는 것이 감지가 되는 경우
+            out_trigger = 0;
             HandleOutTrigger();
             // 모터 수직 이동, 방금 들어온 차를 보고 모터 index와 방향을 결정해야함
         }
