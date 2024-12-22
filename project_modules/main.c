@@ -498,8 +498,15 @@ float Ultrasonic_MeasureDistance(uint8_t sensor_index) {
 
     Ultrasonic_Trigger(sensor_index);
     // Echo 측정 로직 필요
-    float distance = 0.0f;
+    // float distance = 0.0f;
+    
     return distance;
+}
+
+// delay_us 함수 구현
+void delay_us(uint16_t us) {
+    TIM_SetCounter(TIM1, 0); // 타이머 카운터 초기화
+    while (TIM_GetCounter(TIM1) < us); // 지정한 마이크로초만큼 대기
 }
 
 // 압력센서 ADC_CHANNEL 설정
