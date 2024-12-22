@@ -102,17 +102,10 @@
 #define DISTANCE_THRESHOLD 20.0f
 #define CMD_BUFFER_SIZE 100
 
-#define CAR_DETECTION_TIME_SEC 5          
-
 // 블루투스 수신 버퍼
 volatile char bluetooth_rx_buffer[100];
 volatile uint8_t bluetooth_rx_index = 0;
 volatile uint8_t bluetooth_command_received = 0;
-
-// 차량 감지 관련 추가 전역 변수
-volatile uint8_t carDetectionActive = 0;     // 입구 감지 활성화 여부
-volatile uint8_t carDetectionCount = 0;      // 5초 측정을 위한 카운트(=TIM1_IRQHandler 횟수)
-volatile uint8_t carDetected = 0;            // 실제로 차가 감지되었는지
 
 // 주차공간 차 유무 저장 (3x3)
 // 1: 차 있음, 0: 차 없음
@@ -188,7 +181,7 @@ void LED_UpdateByCarPresence(void);
 void Motor_SetSteps(int motor_index, int rotation, int direction);
 
 float Ultrasonic_MeasureDistance(uint8_t sensor_index);
-void Trig(uint8_t sensor_index);
+void Ultrasonic_Trigger(uint8_t sensor_index);
 
 void delay(int);
 void delay_us(uint32_t);
@@ -280,23 +273,24 @@ void GPIO_Configure(void) {
     GPIO_Init(ULTRASONIC_ECHO_PORT, &GPIO_InitStructure);
 }
 
-// 현재 분주와 period를 그냥 막 정한 상태 -> 1초마다 인터럽트 발생
+// 현재 분주와 period를 그냥 막 정한 상태임
 void TIM1_Configure(void) {
     TIM_TimeBaseInitTypeDef TIM_TimeBaseStructure;
 
     // TIM1 설정 (1μs 단위로 동작하도록 설정)
-    TIM_TimeBaseStructure.TIM_Prescaler = 72 - 1;       // 0.01MHz로 작동 (72MHz / 7200)
+    TIM_TimeBaseStructure.TIM_Prescaler = 72 - 1;       // 1MHz로 작동 (72MHz / 72)
     TIM_TimeBaseStructure.TIM_CounterMode = TIM_CounterMode_Up; // 카운터 증가 모드
-    TIM_TimeBaseStructure.TIM_Period = 0xFFFF;          
+    TIM_TimeBaseStructure.TIM_Period = 0xFFFF;          // 최대 카운터 값 (65535)
     TIM_TimeBaseStructure.TIM_ClockDivision = TIM_CKD_DIV1; // 기본 클럭 분주 없음
     TIM_TimeBaseInit(TIM1, &TIM_TimeBaseStructure);
-    TIM_ITConfig(TIM1, TIM_IT_Update, ENABLE); // TIM1 업데이트 인터럽트 활성화
+
     TIM_Cmd(TIM1, ENABLE); // TIM1 활성화
 }
 
 void TIM2_Configure(void)
 {
     TIM_TimeBaseInitTypeDef TIM_TimeBaseStructure;
+
     // 1) RCC에서 TIM2 클록 활성화
     RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2, ENABLE);
 
@@ -316,6 +310,7 @@ void TIM2_Configure(void)
     // 4) TIM2 시작
     TIM_Cmd(TIM2, ENABLE);
 }
+
 
 void USART1_Init(void)
 {
@@ -403,8 +398,9 @@ void NVIC_Configure(void) {
     NVIC_Init(&NVIC_InitStructure);
 
     // ADC1_2 IRQ
+    
     NVIC_InitStructure.NVIC_IRQChannel = ADC1_2_IRQn;
-    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0x02;
+    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0x00;
     NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0x01;
     NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
     NVIC_Init(&NVIC_InitStructure);
@@ -417,7 +413,7 @@ void NVIC_TIM2_Configure(void)
     NVIC_InitTypeDef NVIC_InitStructure;
     
     NVIC_InitStructure.NVIC_IRQChannel = TIM2_IRQn;
-    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 3; // 우선순위
+    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0; // 우선순위
     NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
     NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
     NVIC_Init(&NVIC_InitStructure);
@@ -492,26 +488,35 @@ void Motor_SetSteps(int motor_index, int rotation, int direction) {
     }
 }
 
+void Ultrasonic_Trigger(uint8_t sensor_index) {
+    GPIO_SetBits(ULTRASONIC_TRIG_PORT, ultrasonic_trig_pins[sensor_index]);
+    for(volatile int i=0; i<720; i++); // 약 10us 가정
+    GPIO_ResetBits(ULTRASONIC_TRIG_PORT, ultrasonic_trig_pins[sensor_index]);
+}
+
 void Trig(uint8_t sensor_index) {
-    GPIO_SetBits(ULTRASONIC_TRIG_PORT, ultrasonic_trig_pins[sensor_index]);  // Trig 핀 HIGH
+    GPIO_SetBits(GPIOC, ultrasonic_trig_pins[sensor_index]);  // Trig 핀 HIGH
     delay_us(10);                      // 10μs 유지
-    GPIO_ResetBits(ULTRASONIC_TRIG_PORT, ultrasonic_trig_pins[sensor_index]); // Trig 핀 LOW
+    GPIO_ResetBits(GPIOC, ultrasonic_trig_pins[sensor_index]); // Trig 핀 LOW
 }
 
 float Ultrasonic_MeasureDistance(uint8_t sensor_index) {
-    uint16_t start_time = 0, stop_time = 0, echo_time = 0;
+    // 초음파 거리 측정 로직 필요
+    // 여기서는 틀만 제공
+
+  uint16_t start_time = 0, stop_time = 0, echo_time = 0;
     float distance = 0.0;
 
     Trig(sensor_index); // Trig 신호 송출
 
     // Echo 핀 HIGH 상태 대기
-    while (GPIO_ReadInputDataBit(ULTRASONIC_ECHO_PORT, ultrasonic_echo_pins[sensor_index]) == 0);
+    while (GPIO_ReadInputDataBit(GPIOD, ultrasonic_echo_pins[sensor_index]) == 0);
 
     // Echo 핀 HIGH 시작 시간 기록
     start_time = TIM_GetCounter(TIM1);
 
     // Echo 핀이 LOW 상태로 전환될 때까지 대기
-    while (GPIO_ReadInputDataBit(ULTRASONIC_ECHO_PORT, ultrasonic_echo_pins[sensor_index]) == 1);
+    while (GPIO_ReadInputDataBit(GPIOD, ultrasonic_echo_pins[sensor_index]) == 1);
 
     // Echo 핀 HIGH 종료 시간 기록
     stop_time = TIM_GetCounter(TIM1);
@@ -525,6 +530,10 @@ float Ultrasonic_MeasureDistance(uint8_t sensor_index) {
 
     // 거리 계산 (단위: cm)
     distance = (float)(echo_time * 0.0343) / 2.0; // 속도: 343m/s
+
+    Ultrasonic_Trigger(sensor_index);
+    // Echo 측정 로직 필요
+    // float distance = 0.0f;
 
     return distance;
 }
@@ -550,15 +559,17 @@ uint16_t Read_ADC_Channel(uint8_t channel)
     /* 변환 결과 반환 */
     return ADC_GetConversionValue(ADC1);
 }
-
-
-void USART1_SendString(const char* str)
-{
+/*
+void Bluetooth_SendString(char *str) {
     while (*str) {
         while (USART_GetFlagStatus(USART1, USART_FLAG_TXE) == RESET);
-        USART_SendData(USART1, (uint16_t)*str++);
+        USART_SendData(USART1, *str++);
     }
 }
+*/
+
+// 이런 식으로 3,4,7,8,9,10,11에 대한 EXTI 핸들러도 동일한 패턴으로 구현
+// 실제로는 각 센서 echo 핀에 맞는 EXTI_LineX를 사용해야 함
 // USART1 IRQ (PC와 연결)
 void USART1_IRQHandler() {
     uint16_t word;
@@ -573,18 +584,14 @@ void USART1_IRQHandler() {
 void USART2_IRQHandler() {
     uint16_t word;
     if(USART_GetITStatus(USART2,USART_IT_RXNE)!=RESET){
-        char c = USART_ReceiveData(USART2);
-        if (c == '\n' || c == '\r') {
-            bluetooth_rx_buffer[bluetooth_rx_index] = '\0';
-            bluetooth_rx_index = 0;
-            bluetooth_command_received = 1;
-        } else {
-            if (bluetooth_rx_index < CMD_BUFFER_SIZE - 1) {
-                bluetooth_rx_buffer[bluetooth_rx_index++] = c;
-            }
-        }
-        USART_SendData(USART1, c); // PC로 에코
-        USART_ClearITPendingBit(USART2, USART_IT_RXNE);    
+        word = USART_ReceiveData(USART2);
+        
+
+        
+        // 받은 데이터를 USART1로 에코 (디버깅용)
+        USART_SendData(USART1, word);
+
+        USART_ClearITPendingBit(USART2,USART_IT_RXNE);
     }
 }
 
@@ -661,13 +668,13 @@ void HandleCarEnter(void)
           uint8_t sensor_index = row * 3 + (col + 1);
 
           float distance = Ultrasonic_MeasureDistance(sensor_index);
-          //printf("row, col, distance : %d, %d, %.2f\n", row, col, distance);
+          printf("row, col, distance : %d, %d, %.2f\n", row, col, distance);
           // 예: 5cm 이하이면 차가 들어온 것으로 간주
           if (distance < 5.0f && car_presence[row][col] == 0)
           {
               // 새 차 주차
               car_presence[row][col] = 1;
-              //printf("[Enter] Car detected at row=%d, col=%d\n", row, col);
+              printf("[Enter] Car detected at row=%d, col=%d\n", row, col);
 
               // LED 상태 갱신
               LED_UpdateByCarPresence();
@@ -678,11 +685,6 @@ void HandleCarEnter(void)
           delay(1000000);
       
     }
-    
-    enter_trigger = 0;
-    
-    // 필요하다면 "입장 감지"용 LED 깜빡임 정도만...
-    //printf("[HandleCarEnter] Enter trigger received. Car detection will run via TIM1.\n");
 }
 
 /**
@@ -706,18 +708,18 @@ void HandleOutTrigger(void)
             // row=0 → row=1로, row=1 → row=2로 올리는 식
             if (row < 2) {
                 int newFloor = row + 1; 
-                SetColumnFloor(col, newFloor);
-                //printf("[OutTrigger] Moved column=%d from row=%d to row=%d\n", col, row, newFloor);
+                SetColumnFloor(col+1, newFloor);
+                printf("[OutTrigger] Moved column=%d from row=%d to row=%d\n", col, row, newFloor);
             }
             else {
                 // row=2면 이미 최상층, 더 이상 올릴 필요가 없다고 가정
-                //printf("[OutTrigger] Column=%d is already top floor (row=2), no move.\n", col);
+                printf("[OutTrigger] Column=%d is already top floor (row=2), no move.\n", col);
             }
         }
         else {
             // 차가 없으면 이동할 필요 없음
             // (원한다면 빈 칸을 더 아래로 내린다거나 다른 로직 가능)
-            //printf("[OutTrigger] Column=%d row=%d is empty, no move.\n", col, row);
+            printf("[OutTrigger] Column=%d row=%d is empty, no move.\n", col, row);
         }
     }
 }
@@ -737,7 +739,7 @@ void HandleCarOut(int row_in, int col_in)
 
     // 범위 체크
     if (row < 0 || row > 2 || col < 0 || col > 2) {
-        //printf("[OUT] Invalid row/col!\n");
+        printf("[OUT] Invalid row/col!\n");
         return;
     }
 
@@ -751,7 +753,7 @@ void HandleCarOut(int row_in, int col_in)
 
         // 차량 제거
         car_presence[row][col] = 0;
-        //printf("[OUT] Car removed at row=%d, col=%d\n", row, col);
+        printf("[OUT] Car removed at row=%d, col=%d\n", row, col);
 
         // 필요하면 다시 0층(=row=0)으로 복귀
         // 프로젝트 요구사항에 따라 다름. 예: 기본적으로 항상 1행(=row=0)을 1층에 두고 싶다면:
@@ -764,12 +766,14 @@ void HandleCarOut(int row_in, int col_in)
     }
     else
     {
-        //printf("[OUT] No car at row=%d, col=%d\n", row, col);
+        printf("[OUT] No car at row=%d, col=%d\n", row, col);
     }
 }
 
 //============================ 메인 함수 ============================
 int main() {
+    uint16_t adc_value_0, adc_value_1;
+  
     SystemInit();
     RCC_Configure();
     GPIO_Configure();
@@ -785,16 +789,36 @@ int main() {
     LED_SetColor(0, LED_COLOR_GREEN);
     LED_SetColor(1, LED_COLOR_GREEN);
     LED_SetColor(2, LED_COLOR_GREEN);
+    
+    while(1) {
+    }
 
     while(1) {
+        adc_value_0 = Read_ADC_Channel(ADC_Channel_0);
+        adc_value_1 = Read_ADC_Channel(ADC_Channel_1);
+        printf("adc_value_0 : %d\n", adc_value_0);
+        printf("adc_value_1 : %d\n", adc_value_1);
+
+        if (adc_value_0 > 400) {
+            enter_trigger = 1;
+        }
+
+        if (adc_value_1 > 400) {
+            out_trigger = 1;
+        }
+
         // 각 초음파 센서(1~9)로 거리 측정하고 일정 거리 이하면 차 있음(1), 아니면 없음(0)
         // sensor_index: 1,2,3  / 4,5,6 / 7,8,9 => 3x3
         // row = (sensor_index-1)/3, col = (sensor_index-1)%3
         if (enter_trigger){
+            // 문 개방 -> 이거 안 할거임
+            enter_trigger = 0;
             // 1층에 있는 초음파 센서 트리거링
             HandleCarEnter();
         }
         if (out_trigger){
+            // 사람이 출구를 나가는 것이 감지가 되는 경우
+            out_trigger = 0;
             HandleOutTrigger();
             // 모터 수직 이동, 방금 들어온 차를 보고 모터 index와 방향을 결정해야함
         }
@@ -814,17 +838,16 @@ int main() {
                     HandleCarOut(row_cmd, col_cmd);
                 }
                 else {
-                    //printf("[BT] Invalid OUT command format!\n");
+                    printf("[BT] Invalid OUT command format!\n");
                 }
             }
             else if (strncmp((char*)bluetooth_rx_buffer, "TEST", 4) == 0) 
             {
                 // 임의 테스트 명령 예시
-                USART1_SendString("TEST\n");
-                SetColumnFloor(0, 1);
+                printf("[BT] TEST command received.\n");
             }
             else {
-                //printf("[BT] Unknown command: %s\n", bluetooth_rx_buffer);
+                printf("[BT] Unknown command: %s\n", bluetooth_rx_buffer);
             }
         }
         delay(1000000);
