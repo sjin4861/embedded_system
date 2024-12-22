@@ -499,7 +499,7 @@ float Ultrasonic_MeasureDistance(uint8_t sensor_index) {
     Ultrasonic_Trigger(sensor_index);
     // Echo 측정 로직 필요
     // float distance = 0.0f;
-    
+
     return distance;
 }
 
@@ -763,6 +763,7 @@ int main() {
 
     while(1) {
         adc_value_0 = Read_ADC_Channel(ADC_Channel_0);
+        adc_Value_1 = Read_ADC_Channel(ADC_Channel_1);
 
         if (adc_value_0 > 200) {
             enter_trigger = 1;
