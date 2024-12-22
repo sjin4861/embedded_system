@@ -105,9 +105,8 @@
 #define CAR_DETECTION_TIME_SEC 5          
 
 // 블루투스 수신 버퍼
-volatile char bluetooth_rx_buffer[100];
+char bluetooth_rx_buffer[5000];
 volatile uint8_t bluetooth_rx_index = 0;
-volatile uint8_t bluetooth_command_received = 0;
 
 // 차량 감지 관련 추가 전역 변수
 volatile uint8_t carDetectionActive = 0;     // 입구 감지 활성화 여부
@@ -195,6 +194,12 @@ void delay_us(uint32_t);
 void SetColumnFloor(int col, int newFloor);
 void HandleCarEnter(void);
 void HandleOutTrigger(void);
+void HandleCarOut(int row_in, int col_in);
+
+// USART 통신용
+void SendCarPresenceStatus(void);
+void USART_SendString(USART_TypeDef* USARTx, const char* str);
+
 
 //============================ 함수 구현부 ============================
 
@@ -389,8 +394,8 @@ void NVIC_Configure(void) {
     // USART1 IRQ
     NVIC_EnableIRQ(USART1_IRQn);
     NVIC_InitStructure.NVIC_IRQChannel = USART1_IRQn;
-    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0; 
-    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
+    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 1; 
+    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 2;
     NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
     NVIC_Init(&NVIC_InitStructure);
 
@@ -404,8 +409,8 @@ void NVIC_Configure(void) {
 
     // ADC1_2 IRQ
     NVIC_InitStructure.NVIC_IRQChannel = ADC1_2_IRQn;
-    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0x02;
-    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0x01;
+    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 1;
+    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 1;
     NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
     NVIC_Init(&NVIC_InitStructure);
 
@@ -551,14 +556,6 @@ uint16_t Read_ADC_Channel(uint8_t channel)
     return ADC_GetConversionValue(ADC1);
 }
 
-
-void USART1_SendString(const char* str)
-{
-    while (*str) {
-        while (USART_GetFlagStatus(USART1, USART_FLAG_TXE) == RESET);
-        USART_SendData(USART1, (uint16_t)*str++);
-    }
-}
 // USART1 IRQ (PC와 연결)
 void USART1_IRQHandler() {
     uint16_t word;
@@ -569,22 +566,99 @@ void USART1_IRQHandler() {
         USART_ClearITPendingBit(USART1,USART_IT_RXNE);
     }
 }
-// USART2 IRQ (블루투스 모듈 연결)
-void USART2_IRQHandler() {
-    uint16_t word;
-    if(USART_GetITStatus(USART2,USART_IT_RXNE)!=RESET){
+
+void USART2_IRQHandler()
+{
+    if(USART_GetITStatus(USART2, USART_IT_RXNE)!=RESET){
         char c = USART_ReceiveData(USART2);
+
+        // 수신 버퍼 처리
         if (c == '\n' || c == '\r') {
             bluetooth_rx_buffer[bluetooth_rx_index] = '\0';
             bluetooth_rx_index = 0;
-            bluetooth_command_received = 1;
-        } else {
+
+            // 여기서 명령 해석
+            if (strcmp(bluetooth_rx_buffer, "SHOW") == 0)
+            {
+                // 주차 현황 전송
+                SendCarPresenceStatus();
+            }
+            else if (strncmp(bluetooth_rx_buffer, "TEST", 4) == 0)
+            {
+                // TEST r d 형태 파싱
+                // 예: "TEST 0 1" → r=0, d=1
+                // 예: "TEST 2 -1" → r=2, d=-1
+                int col_idx, direction;
+                int matches = sscanf(bluetooth_rx_buffer + 4, "%d %d", &col_idx, &direction);
+                if (matches == 2) {
+                    // col_idx: 0,1,2
+                    // direction: +1, -1
+                    // 현 current_floor[col_idx]에서 direction만큼 이동
+                    int newFloor = current_floor[col_idx] + direction;
+                    // 범위 제한(0~2)
+                    if (newFloor < 0) newFloor = 0;
+                    else if (newFloor > 2) newFloor = 2;
+
+                    SetColumnFloor(col_idx, newFloor);
+
+                    // 메시지
+                    char msg[50];
+                    sprintf(msg, "TEST col=%d, direction=%d -> newFloor=%d\r\n",
+                            col_idx, direction, newFloor);
+                    USART_SendString(USART1, msg);
+                    USART_SendString(USART2, msg);
+                }
+            }
+            else if (strncmp(bluetooth_rx_buffer, "OUT", 3) == 0)
+            {
+                // 기존 OUT r c 처리 (핸들링 동일)
+                int row_cmd, col_cmd;
+                int matches = sscanf(bluetooth_rx_buffer+3, "%d %d", &row_cmd, &col_cmd);
+                if (matches == 2) {
+                    HandleCarOut(row_cmd, col_cmd);
+                } else {
+                    USART_SendString(USART1, "[BT] Invalid OUT command format!\r\n");
+                    USART_SendString(USART2, "[BT] Invalid OUT command format!\r\n");
+                }
+            }
+        } 
+        else {
+            // 아직 '\n' or '\r'이 아닐 때는 버퍼에 쌓음
             if (bluetooth_rx_index < CMD_BUFFER_SIZE - 1) {
                 bluetooth_rx_buffer[bluetooth_rx_index++] = c;
             }
         }
-        USART_SendData(USART1, c); // PC로 에코
+
+        // PC 에코
+        USART_SendData(USART1, c); 
         USART_ClearITPendingBit(USART2, USART_IT_RXNE);    
+    }
+}
+
+// USART로 문자열 전송 (PC, BT 겸용)
+void USART_SendString(USART_TypeDef* USARTx, const char* str)
+{
+    while (*str)
+    {
+        while (USART_GetFlagStatus(USARTx, USART_FLAG_TXE) == RESET);
+        USART_SendData(USARTx, (uint16_t)*str++);
+    }
+}
+
+// 현재 주차 현황을 문자열로 만들어 PC/블루투스 양쪽으로 전송
+void SendCarPresenceStatus(void)
+{
+    // 예: Row0: 1 0 1
+    for(int row=0; row<3; row++) {
+        char msg[50];
+        sprintf(msg, "Row%d: %d %d %d\r\n", row,
+                car_presence[row][0],
+                car_presence[row][1],
+                car_presence[row][2]);
+        // PC(USART1) 전송
+        USART_SendString(USART1, msg);
+        // BT(USART2) 전송
+        USART_SendString(USART2, msg);
     }
 }
 
@@ -651,9 +725,7 @@ void SetColumnFloor(int col, int newFloor)
 void HandleCarEnter(void)
 {
     // 트리거 한번 처리 후에는 클리어
-    
     // 각 열(col)마다 현재 1층인 행(row)를 파악
-    
       for (int col = 0; col < 3; col++)
       {
           int row = current_floor[col]; // 이 열에서 1층에 놓여있는 행
@@ -661,7 +733,7 @@ void HandleCarEnter(void)
           uint8_t sensor_index = row * 3 + (col + 1);
 
           float distance = Ultrasonic_MeasureDistance(sensor_index);
-          //printf("row, col, distance : %d, %d, %.2f\n", row, col, distance);
+          // printf("row, col, distance : %d, %d, %.2f\n", row, col, distance);
           // 예: 5cm 이하이면 차가 들어온 것으로 간주
           if (distance < 5.0f && car_presence[row][col] == 0)
           {
@@ -797,35 +869,6 @@ int main() {
         if (out_trigger){
             HandleOutTrigger();
             // 모터 수직 이동, 방금 들어온 차를 보고 모터 index와 방향을 결정해야함
-        }
-        // 블루투스 출차 명령
-        if (bluetooth_command_received) {
-            bluetooth_command_received = 0;
-            // 예: "OUT 1 2" → row=1, col=2 → 1-based
-            // 문자열 파싱 로직 (간단 예시)
-            // 실제론 strtok, sscanf 등 사용 가능
-            if (strncmp((char*)bluetooth_rx_buffer, "OUT", 3) == 0) 
-            {
-                // 형식: "OUT r c"
-                int row_cmd, col_cmd;
-                int matches = sscanf((char*)bluetooth_rx_buffer+3, "%d %d", &row_cmd, &col_cmd);
-                if (matches == 2) {
-                    // 예: OUT 1 1
-                    HandleCarOut(row_cmd, col_cmd);
-                }
-                else {
-                    //printf("[BT] Invalid OUT command format!\n");
-                }
-            }
-            else if (strncmp((char*)bluetooth_rx_buffer, "TEST", 4) == 0) 
-            {
-                // 임의 테스트 명령 예시
-                USART1_SendString("TEST\n");
-                SetColumnFloor(0, 1);
-            }
-            else {
-                //printf("[BT] Unknown command: %s\n", bluetooth_rx_buffer);
-            }
         }
         delay(1000000);
     }
