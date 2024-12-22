@@ -239,12 +239,8 @@ void GPIO_Configure(void) {
     GPIO_Init(GPIOA, &GPIO_InitStructure);
 
     // USART2 TX: PD5 (AF_PP), USART2 RX: PD6 (IN_FLOATING)
-<<<<<<< HEAD
-    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_2;
-=======
     GPIO_PinRemapConfig(GPIO_Remap_USART2, ENABLE);
     GPIO_InitStructure.GPIO_Pin = GPIO_Pin_5;
->>>>>>> remotes/origin/bluetooth
     GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
     GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP;
     GPIO_Init(GPIOA, &GPIO_InitStructure);
@@ -565,11 +561,7 @@ uint16_t Read_ADC_Channel(uint8_t channel)
     /* 변환 결과 반환 */
     return ADC_GetConversionValue(ADC1);
 }
-<<<<<<< HEAD
-
-=======
 /*
->>>>>>> remotes/origin/bluetooth
 void Bluetooth_SendString(char *str) {
     while (*str) {
         while (USART_GetFlagStatus(USART1, USART_FLAG_TXE) == RESET);
