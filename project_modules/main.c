@@ -188,6 +188,7 @@ void EXTI1_IRQHandler(void);
 void USART1_IRQHandler(void);
 
 void delay(int);
+void delay_us(uint16_t);
 void SetColumnFloor(int col, int newFloor);
 void HandleCarEnter(void);
 void HandleOutTrigger(void);
