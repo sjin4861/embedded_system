@@ -105,7 +105,7 @@
 #define CAR_DETECTION_TIME_SEC 5          
 
 // 블루투스 수신 버퍼
-volatile char bluetooth_rx_buffer[100];
+char bluetooth_rx_buffer[5000];
 volatile uint8_t bluetooth_rx_index = 0;
 
 // 차량 감지 관련 추가 전역 변수
@@ -194,6 +194,7 @@ void delay_us(uint32_t);
 void SetColumnFloor(int col, int newFloor);
 void HandleCarEnter(void);
 void HandleOutTrigger(void);
+void HandleCarOut(int row_in, int col_in);
 
 // USART 통신용
 void SendCarPresenceStatus(void);
@@ -393,8 +394,8 @@ void NVIC_Configure(void) {
     // USART1 IRQ
     NVIC_EnableIRQ(USART1_IRQn);
     NVIC_InitStructure.NVIC_IRQChannel = USART1_IRQn;
-    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0; 
-    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
+    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 1; 
+    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 2;
     NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
     NVIC_Init(&NVIC_InitStructure);
 
@@ -408,8 +409,8 @@ void NVIC_Configure(void) {
 
     // ADC1_2 IRQ
     NVIC_InitStructure.NVIC_IRQChannel = ADC1_2_IRQn;
-    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0x02;
-    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0x01;
+    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 1;
+    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 1;
     NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
     NVIC_Init(&NVIC_InitStructure);
 
@@ -620,11 +621,6 @@ void USART2_IRQHandler()
                     USART_SendString(USART2, "[BT] Invalid OUT command format!\r\n");
                 }
             }
-            else {
-                // 알 수 없는 명령
-                USART_SendString(USART1, "[BT] Unknown command\r\n");
-                USART_SendString(USART2, "[BT] Unknown command\r\n");
-            }
         } 
         else {
             // 아직 '\n' or '\r'이 아닐 때는 버퍼에 쌓음
@@ -737,7 +733,7 @@ void HandleCarEnter(void)
           uint8_t sensor_index = row * 3 + (col + 1);
 
           float distance = Ultrasonic_MeasureDistance(sensor_index);
-          //printf("row, col, distance : %d, %d, %.2f\n", row, col, distance);
+          // printf("row, col, distance : %d, %d, %.2f\n", row, col, distance);
           // 예: 5cm 이하이면 차가 들어온 것으로 간주
           if (distance < 5.0f && car_presence[row][col] == 0)
           {
