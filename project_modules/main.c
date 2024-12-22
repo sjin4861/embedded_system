@@ -912,6 +912,7 @@ int main() {
             {
                 // 임의 테스트 명령 예시
                 printf("[BT] TEST command received.\n");
+                SetColumnFloor(0, 1);
             }
             else {
                 printf("[BT] Unknown command: %s\n", bluetooth_rx_buffer);
