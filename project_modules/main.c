@@ -83,9 +83,9 @@
 #define LED0_YELLOW_PIN GPIO_Pin_1
 #define LED0_RED_PIN GPIO_Pin_2
 
-#define LED1_GREEN_PIN GPIO_Pin_3
-#define LED1_YELLOW_PIN GPIO_Pin_4
-#define LED1_RED_PIN GPIO_Pin_5
+#define LED1_GREEN_PIN GPIO_Pin_13
+#define LED1_YELLOW_PIN GPIO_Pin_14
+#define LED1_RED_PIN GPIO_Pin_15
 
 #define LED2_GREEN_PIN GPIO_Pin_6
 #define LED2_YELLOW_PIN GPIO_Pin_7
@@ -169,10 +169,12 @@ int out_trigger = 0;
 void RCC_Configure(void);
 void GPIO_Configure(void);
 void TIM1_Configure(void);
+void TIM2_Configure(void);
 void ADC_Configure(void);
 void NVIC_Configure(void);
 void EXTI_Configure(void);
 void USART1_Init(void);
+void USART2_Init(void);
 
 void LED_SetColor(uint8_t led_num, uint8_t color);
 void LED_UpdateByCarPresence(void);
@@ -181,13 +183,8 @@ void Motor_SetSteps(int motor_index, int rotation, int direction);
 float Ultrasonic_MeasureDistance(uint8_t sensor_index);
 void Ultrasonic_Trigger(uint8_t sensor_index);
 
-void Bluetooth_SendString(char *str);
-
-void EXTI0_IRQHandler(void);
-void EXTI1_IRQHandler(void);
-void USART1_IRQHandler(void);
-
 void delay(int);
+void delay_us(uint32_t);
 void SetColumnFloor(int col, int newFloor);
 void HandleCarEnter(void);
 void HandleOutTrigger(void);
@@ -196,16 +193,18 @@ void HandleOutTrigger(void);
 
 
 void RCC_Configure(void) {
-    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
+
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB, ENABLE);
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOC, ENABLE);
-    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOD, ENABLE);
+
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOE, ENABLE);
     
     // ADC1 (APB2), TIM1 (APB2)
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_ADC1, ENABLE);
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_TIM1, ENABLE);
-
+    
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOD, ENABLE);
     // USART1 (APB2), USART2 (APB1)
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_USART1, ENABLE);
     RCC_APB1PeriphClockCmd(RCC_APB1Periph_USART2, ENABLE);
@@ -232,24 +231,23 @@ void GPIO_Configure(void) {
 
     // USART1 TX (PA9), RX (PA10)
     GPIO_InitStructure.GPIO_Pin = GPIO_Pin_9;  // TX
-    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP; 
     GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP; 
     GPIO_Init(GPIOA, &GPIO_InitStructure);
 
-    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_10; // RX
-    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN_FLOATING;
+    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_10;
+    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IPU;
     GPIO_Init(GPIOA, &GPIO_InitStructure);
 
     // USART2 TX: PD5 (AF_PP), USART2 RX: PD6 (IN_FLOATING)
-    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_5;
+    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_2;
     GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
     GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP;
-    GPIO_Init(GPIOD, &GPIO_InitStructure);
+    GPIO_Init(GPIOA, &GPIO_InitStructure);
 	
-    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_6;
-    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
-    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN_FLOATING;
-    GPIO_Init(GPIOD, &GPIO_InitStructure);
+    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_3;
+    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IPU;
+    GPIO_Init(GPIOA, &GPIO_InitStructure);
 
     // 스텝모터 핀 (PE0~PE15) 모두 출력
     GPIO_InitStructure.GPIO_Pin = 0xFFFF; // PE0~PE15
@@ -289,6 +287,31 @@ void TIM1_Configure(void) {
     TIM_Cmd(TIM1, ENABLE); // TIM1 활성화
 }
 
+void TIM2_Configure(void)
+{
+    TIM_TimeBaseInitTypeDef TIM_TimeBaseStructure;
+
+    // 1) RCC에서 TIM2 클록 활성화
+    RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2, ENABLE);
+
+    // 2) TIM2 기본 설정
+    //    주파수: (APB1=36MHz) / (Prescaler+1) = 1kHz
+    //    Period(ARR)=1000 → 1초마다 오버플로
+    TIM_TimeBaseStructure.TIM_Prescaler = 36000 - 1;  // 프리스케일러 값
+    TIM_TimeBaseStructure.TIM_CounterMode = TIM_CounterMode_Up; 
+    TIM_TimeBaseStructure.TIM_Period = 1000 - 1;      // 1초 주기 (1kHz * 1000)
+    TIM_TimeBaseStructure.TIM_ClockDivision = TIM_CKD_DIV1; 
+    TIM_TimeBaseStructure.TIM_RepetitionCounter = 0;  // TIM2에는 사용 안 함
+    TIM_TimeBaseInit(TIM2, &TIM_TimeBaseStructure);
+
+    // 3) TIM 업데이트 이벤트(오버플로) 인터럽트 허용
+    TIM_ITConfig(TIM2, TIM_IT_Update, ENABLE);
+
+    // 4) TIM2 시작
+    TIM_Cmd(TIM2, ENABLE);
+}
+
+
 void USART1_Init(void)
 {
     USART_InitTypeDef USART1_InitStructure;
@@ -296,13 +319,12 @@ void USART1_Init(void)
     USART_Cmd(USART1, ENABLE);
 
     USART1_InitStructure.USART_BaudRate = 9600;
-    USART1_InitStructure.USART_WordLength = USART_WordLength_8b;
-    USART1_InitStructure.USART_StopBits = USART_StopBits_1;
-    USART1_InitStructure.USART_Parity = USART_Parity_No;
-    USART1_InitStructure.USART_Mode = USART_Mode_Rx | USART_Mode_Tx;
     USART1_InitStructure.USART_HardwareFlowControl = USART_HardwareFlowControl_None;
+    USART1_InitStructure.USART_Mode = USART_Mode_Rx | USART_Mode_Tx;
+    USART1_InitStructure.USART_Parity = USART_Parity_No;
+    USART1_InitStructure.USART_StopBits = USART_StopBits_1;
+    USART1_InitStructure.USART_WordLength = USART_WordLength_8b;
     USART_Init(USART1, &USART1_InitStructure);
-
     USART_ITConfig(USART1, USART_IT_RXNE, ENABLE);
 }
 
@@ -313,13 +335,12 @@ void USART2_Init(void)
     USART_Cmd(USART2, ENABLE);
 
     USART2_InitStructure.USART_BaudRate = 9600;
-    USART2_InitStructure.USART_WordLength = USART_WordLength_8b;
-    USART2_InitStructure.USART_StopBits = USART_StopBits_1;
-    USART2_InitStructure.USART_Parity = USART_Parity_No;
-    USART2_InitStructure.USART_Mode = USART_Mode_Rx | USART_Mode_Tx;
     USART2_InitStructure.USART_HardwareFlowControl = USART_HardwareFlowControl_None;
+    USART2_InitStructure.USART_Mode = USART_Mode_Rx | USART_Mode_Tx;
+    USART2_InitStructure.USART_Parity = USART_Parity_No;
+    USART2_InitStructure.USART_StopBits = USART_StopBits_1;
+    USART2_InitStructure.USART_WordLength = USART_WordLength_8b;
     USART_Init(USART2, &USART2_InitStructure);
-
     USART_ITConfig(USART2, USART_IT_RXNE, ENABLE);
 }
 
@@ -328,21 +349,21 @@ void ADC_Configure(void) {
 
     // ADC1 초기화 설정
     ADC_InitStructure.ADC_Mode               = ADC_Mode_Independent;  
-    ADC_InitStructure.ADC_ScanConvMode       = ENABLE;        // 스캔 모드
-    ADC_InitStructure.ADC_ContinuousConvMode = ENABLE;        // 연속 변환
+    ADC_InitStructure.ADC_ScanConvMode       = DISABLE;        // 스캔 모드
+    ADC_InitStructure.ADC_ContinuousConvMode = DISABLE;        // 연속 변환
     ADC_InitStructure.ADC_ExternalTrigConv   = ADC_ExternalTrigConv_None;
     ADC_InitStructure.ADC_DataAlign          = ADC_DataAlign_Right;
-    ADC_InitStructure.ADC_NbrOfChannel       = 2;             // 변환할 채널 수: 2
+    ADC_InitStructure.ADC_NbrOfChannel       = 1;             // 변환할 채널 수: 2
     ADC_Init(ADC1, &ADC_InitStructure);
 
     // 채널 순서 설정
     // (Rank=1)에 PA0 -> ADC_Channel_0
     // (Rank=2)에 PA1 -> ADC_Channel_1
-    ADC_RegularChannelConfig(ADC1, ADC_Channel_0, 1, ADC_SampleTime_28Cycles5);
-    ADC_RegularChannelConfig(ADC1, ADC_Channel_1, 2, ADC_SampleTime_28Cycles5);
+    // ADC_RegularChannelConfig(ADC1, ADC_Channel_0, 1, ADC_SampleTime_71Cycles5);
+    // ADC_RegularChannelConfig(ADC1, ADC_Channel_1, 2, ADC_SampleTime_71Cycles5);
 
     // **EOC(End of Conversion) 인터럽트 활성화**
-    ADC_ITConfig(ADC1, ADC_IT_EOC, ENABLE);
+    // ADC_ITConfig(ADC1, ADC_IT_EOC, ENABLE);
 
     // ADC 활성화 및 캘리브레이션
     ADC_Cmd(ADC1, ENABLE);
@@ -352,7 +373,7 @@ void ADC_Configure(void) {
     while(ADC_GetCalibrationStatus(ADC1));
 
     // ADC 변환 시작 (연속 모드이므로 자동으로 순차 변환)
-    ADC_SoftwareStartConvCmd(ADC1, ENABLE);
+    // ADC_SoftwareStartConvCmd(ADC1, ENABLE);
 }
 
 void NVIC_Configure(void) {
@@ -363,20 +384,21 @@ void NVIC_Configure(void) {
     // USART1 IRQ
     NVIC_EnableIRQ(USART1_IRQn);
     NVIC_InitStructure.NVIC_IRQChannel = USART1_IRQn;
-    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0x00; 
-    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0x00;
+    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0; 
+    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
     NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
     NVIC_Init(&NVIC_InitStructure);
 
     // USART2 IRQ
     NVIC_EnableIRQ(USART2_IRQn);
     NVIC_InitStructure.NVIC_IRQChannel = USART2_IRQn;
-    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0x00; 
-    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0x00; 
+    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 1; 
+    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0; 
     NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
     NVIC_Init(&NVIC_InitStructure);
 
     // ADC1_2 IRQ
+    
     NVIC_InitStructure.NVIC_IRQChannel = ADC1_2_IRQn;
     NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0x00;
     NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0x01;
@@ -384,6 +406,19 @@ void NVIC_Configure(void) {
     NVIC_Init(&NVIC_InitStructure);
 
 }
+
+// TIM2 인터럽트 설정
+void NVIC_TIM2_Configure(void)
+{
+    NVIC_InitTypeDef NVIC_InitStructure;
+    
+    NVIC_InitStructure.NVIC_IRQChannel = TIM2_IRQn;
+    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0; // 우선순위
+    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
+    NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+    NVIC_Init(&NVIC_InitStructure);
+}
+
 
 void LED_SetColor(uint8_t led_num, uint8_t color) {
     // led_num: 0,1,2 / color: 0=Green,1=Yellow,2=Red
@@ -498,19 +533,41 @@ float Ultrasonic_MeasureDistance(uint8_t sensor_index) {
 
     Ultrasonic_Trigger(sensor_index);
     // Echo 측정 로직 필요
-    float distance = 0.0f;
+    // float distance = 0.0f;
+
     return distance;
 }
 
+// delay_us 함수 구현
+void delay_us(uint32_t us) {
+    uint32_t count = (SystemCoreClock / 1000000) * us / 5;
+    for (; count != 0; count--);
+}
+
+// 압력센서 ADC_CHANNEL 설정
+uint16_t Read_ADC_Channel(uint8_t channel)
+{
+    /* 원하는 채널 설정 */
+    ADC_RegularChannelConfig(ADC1, channel, 1, ADC_SampleTime_71Cycles5);
+
+    /* 변환 시작 */
+    ADC_SoftwareStartConvCmd(ADC1, ENABLE);
+
+    /* 변환 완료 대기 */
+    while (!ADC_GetFlagStatus(ADC1, ADC_FLAG_EOC));
+
+    /* 변환 결과 반환 */
+    return ADC_GetConversionValue(ADC1);
+}
+/*
 void Bluetooth_SendString(char *str) {
     while (*str) {
         while (USART_GetFlagStatus(USART1, USART_FLAG_TXE) == RESET);
         USART_SendData(USART1, *str++);
     }
 }
+*/
 
-// 이런 식으로 3,4,7,8,9,10,11에 대한 EXTI 핸들러도 동일한 패턴으로 구현
-// 실제로는 각 센서 echo 핀에 맞는 EXTI_LineX를 사용해야 함
 // USART1 IRQ (PC와 연결)
 void USART1_IRQHandler() {
     uint16_t word;
@@ -525,46 +582,39 @@ void USART1_IRQHandler() {
 void USART2_IRQHandler() {
     uint16_t word;
     if(USART_GetITStatus(USART2,USART_IT_RXNE)!=RESET){
-        word = USART_ReceiveData(USART2);
-        
-        // 명령 버퍼에 저장
-        if (word == '\n' || word == '\r') {
-            // 명령 종료
+        char c = USART_ReceiveData(USART2);
+        if (c == '\n' || c == '\r') {
             bluetooth_rx_buffer[bluetooth_rx_index] = '\0';
             bluetooth_rx_index = 0;
             bluetooth_command_received = 1;
         } else {
             if (bluetooth_rx_index < CMD_BUFFER_SIZE - 1) {
-                bluetooth_rx_buffer[bluetooth_rx_index++] = (char)word;
+                bluetooth_rx_buffer[bluetooth_rx_index++] = c;
             }
         }
-        
-        // 받은 데이터를 USART1로 에코 (디버깅용)
-        USART_SendData(USART1, word);
-
-        USART_ClearITPendingBit(USART2,USART_IT_RXNE);
+        USART_SendData(USART1, c); // PC로 에코
+        USART_ClearITPendingBit(USART2, USART_IT_RXNE);    
     }
 }
-// ADC 변환 완료 ISR
-void ADC1_2_IRQHandler(void) {
-    if (ADC_GetITStatus(ADC1, ADC_IT_EOC) != RESET) {
-        static uint16_t adc_values[2];
-        
-        // 첫 번째 변환 결과 (채널 0) 읽기
-        adc_values[0] = ADC_GetConversionValue(ADC1);  
-        // 두 번째 변환 결과 (채널 1) 읽기
-        adc_values[1] = ADC_GetConversionValue(ADC1);  
 
-        // 예시: 임계값 3000 초과 시 "차량 감지"로 간주
-        if (adc_values[0] > 3000) {
+void TIM2_IRQHandler(void) {
+    volatile uint16_t adc_value_0 = 0, adc_value_1 = 0;
+
+    if (TIM_GetITStatus(TIM2, TIM_IT_Update) != RESET)
+    {
+        TIM_ClearITPendingBit(TIM2, TIM_IT_Update);
+
+        // 1초에 한 번씩 압력 센서(ADC) 읽기
+        adc_value_0 = Read_ADC_Channel(ADC_Channel_0);
+        adc_value_1 = Read_ADC_Channel(ADC_Channel_1);
+
+        // 여기서 임계값 비교 등 간단한 처리도 할 수 있음
+        if (adc_value_0 > 600) {
             enter_trigger = 1;
         }
-        if (adc_values[1] > 3000) {
+        if (adc_value_1 > 600) {
             out_trigger = 1;
         }
-
-        // 인터럽트 플래그 클리어
-        ADC_ClearITPendingBit(ADC1, ADC_IT_EOC);
     }
 }
 
@@ -589,11 +639,11 @@ void SetColumnFloor(int col, int newFloor)
     if (diff > 0) {
         // 위로 이동
         // diff칸 이동해야 하므로 rotation = 3 * diff (예시)
-        Motor_SetSteps(col, 3 * diff, 1);
+        Motor_SetSteps(col+1, 3 * diff, -1);
     } else {
         // 아래로 이동 (diff < 0)
         // 절댓값(-diff)만큼 칸 이동
-        Motor_SetSteps(col, 3 * (-diff), -1);
+        Motor_SetSteps(col+1, 3 * (-diff), 1);
     }
     
     // 현재 층 갱신
@@ -610,29 +660,32 @@ void SetColumnFloor(int col, int newFloor)
 void HandleCarEnter(void)
 {
     // 트리거 한번 처리 후에는 클리어
-    enter_trigger = 0;
-
+    
     // 각 열(col)마다 현재 1층인 행(row)를 파악
-    for (int col = 0; col < 3; col++)
-    {
-        int row = current_floor[col]; // 이 열에서 1층에 놓여있는 행
-        // 초음파 센서 인덱스 (기존 코드에서 1~9로 매핑)
-        uint8_t sensor_index = row * 3 + (col + 1);
+    
+      for (int col = 0; col < 3; col++)
+      {
+          int row = current_floor[col]; // 이 열에서 1층에 놓여있는 행
+          // 초음파 센서 인덱스 (기존 코드에서 1~9로 매핑)
+          uint8_t sensor_index = row * 3 + (col + 1);
 
-        float distance = Ultrasonic_MeasureDistance(sensor_index);
-        // 예: 10cm 이하이면 차가 들어온 것으로 간주
-        if (distance < 10.0f && car_presence[row][col] == 0)
-        {
-            // 새 차 주차
-            car_presence[row][col] = 1;
-            printf("[Enter] Car detected at row=%d, col=%d\n", row, col);
+          float distance = Ultrasonic_MeasureDistance(sensor_index);
+          printf("row, col, distance : %d, %d, %.2f\n", row, col, distance);
+          // 예: 5cm 이하이면 차가 들어온 것으로 간주
+          if (distance < 5.0f && car_presence[row][col] == 0)
+          {
+              // 새 차 주차
+              car_presence[row][col] = 1;
+              printf("[Enter] Car detected at row=%d, col=%d\n", row, col);
 
-            // LED 상태 갱신
-            LED_UpdateByCarPresence();
-            // 한 칸만 주차 처리 후 종료
-            break;
-        }
-        // 한 1초 있다가 위로 올려버릴까?
+              // LED 상태 갱신
+              LED_UpdateByCarPresence();
+              // 한 칸만 주차 처리 후 종료
+              enter_trigger = 0;
+          }
+          // 한 1초 있다가 위로 올려버릴까?
+          delay(1000000);
+      
     }
 }
 
@@ -657,7 +710,7 @@ void HandleOutTrigger(void)
             // row=0 → row=1로, row=1 → row=2로 올리는 식
             if (row < 2) {
                 int newFloor = row + 1; 
-                SetColumnFloor(col, newFloor);
+                SetColumnFloor(col+1, newFloor);
                 printf("[OutTrigger] Moved column=%d from row=%d to row=%d\n", col, row, newFloor);
             }
             else {
@@ -721,7 +774,7 @@ void HandleCarOut(int row_in, int col_in)
 
 //============================ 메인 함수 ============================
 int main() {
-    float distance;
+    uint16_t adc_value_0, adc_value_1;
   
     SystemInit();
     RCC_Configure();
@@ -731,6 +784,8 @@ int main() {
     USART1_Init(); // PC
     USART2_Init(); // 블루투스
     NVIC_Configure();
+    TIM2_Configure(); // 1초마다 압력센서 읽기
+    NVIC_TIM2_Configure();  // TIM2 NVIC 설정
     
     // 초기 LED 상태 (모두 GREEN)
     LED_SetColor(0, LED_COLOR_GREEN);
@@ -741,15 +796,11 @@ int main() {
         // 각 초음파 센서(1~9)로 거리 측정하고 일정 거리 이하면 차 있음(1), 아니면 없음(0)
         // sensor_index: 1,2,3  / 4,5,6 / 7,8,9 => 3x3
         // row = (sensor_index-1)/3, col = (sensor_index-1)%3
-        printf("%f\n",distance);
         if (enter_trigger){
-            // 문 개방 -> 이거 안 할거임
-
             // 1층에 있는 초음파 센서 트리거링
             HandleCarEnter();
         }
         if (out_trigger){
-            // 사람이 출구를 나가는 것이 감지가 되는 경우
             HandleOutTrigger();
             // 모터 수직 이동, 방금 들어온 차를 보고 모터 index와 방향을 결정해야함
         }
@@ -783,4 +834,5 @@ int main() {
         }
         delay(1000000);
     }
+    return 0;
 }
