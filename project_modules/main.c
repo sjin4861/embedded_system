@@ -789,8 +789,6 @@ int main() {
     LED_SetColor(0, LED_COLOR_GREEN);
     LED_SetColor(1, LED_COLOR_GREEN);
     LED_SetColor(2, LED_COLOR_GREEN);
-    
-    delay(10000000);
 
     while(1) {
         // 각 초음파 센서(1~9)로 거리 측정하고 일정 거리 이하면 차 있음(1), 아니면 없음(0)
@@ -798,14 +796,12 @@ int main() {
         // row = (sensor_index-1)/3, col = (sensor_index-1)%3
         if (enter_trigger){
             // 문 개방 -> 이거 안 할거임
-            enter_trigger = 0;
             // 1층에 있는 초음파 센서 트리거링
             HandleCarEnter();
         }
         if (out_trigger){
             // 사람이 출구를 나가는 것이 감지가 되는 경우
             out_trigger = 0;
-            HandleOutTrigger();
             // 모터 수직 이동, 방금 들어온 차를 보고 모터 index와 방향을 결정해야함
         }
         // 블루투스 출차 명령
