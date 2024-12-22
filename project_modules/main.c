@@ -342,7 +342,7 @@ void ADC_Configure(void) {
     ADC_RegularChannelConfig(ADC1, ADC_Channel_1, 2, ADC_SampleTime_28Cycles5);
 
     // **EOC(End of Conversion) 인터럽트 활성화**
-    ADC_ITConfig(ADC1, ADC_IT_EOC, ENABLE);
+    // ADC_ITConfig(ADC1, ADC_IT_EOC, ENABLE);
 
     // ADC 활성화 및 캘리브레이션
     ADC_Cmd(ADC1, ENABLE);
@@ -500,6 +500,22 @@ float Ultrasonic_MeasureDistance(uint8_t sensor_index) {
     // Echo 측정 로직 필요
     float distance = 0.0f;
     return distance;
+}
+
+// 압력센서 ADC_CHANNEL 설정
+uint16_t Read_ADC_Channel(uint8_t channel)
+{
+    /* 원하는 채널 설정 */
+    ADC_RegularChannelConfig(ADC1, channel, 1, ADC_SampleTime_28Cycles5);
+
+    /* 변환 시작 */
+    ADC_SoftwareStartConvCmd(ADC1, ENABLE);
+
+    /* 변환 완료 대기 */
+    while (!ADC_GetFlagStatus(ADC1, ADC_FLAG_EOC));
+
+    /* 변환 결과 반환 */
+    return ADC_GetConversionValue(ADC1);
 }
 
 void Bluetooth_SendString(char *str) {
@@ -722,6 +738,7 @@ void HandleCarOut(int row_in, int col_in)
 //============================ 메인 함수 ============================
 int main() {
     float distance;
+    uint16_t adc_value_0, adc_value_1;
   
     SystemInit();
     RCC_Configure();
@@ -738,6 +755,16 @@ int main() {
     LED_SetColor(2, LED_COLOR_GREEN);
 
     while(1) {
+        adc_value_0 = Read_ADC_Channel(ADC_Channel_0);
+
+        if (adc_value_0 > 200) {
+            enter_trigger = 1;
+        }
+
+        if (adc_value_1 > 200) {
+            out_trigger = 1;
+        }
+
         // 각 초음파 센서(1~9)로 거리 측정하고 일정 거리 이하면 차 있음(1), 아니면 없음(0)
         // sensor_index: 1,2,3  / 4,5,6 / 7,8,9 => 3x3
         // row = (sensor_index-1)/3, col = (sensor_index-1)%3
