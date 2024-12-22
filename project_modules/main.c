@@ -172,6 +172,9 @@ uint16_t motor_pins[4][4] = {
 int enter_trigger = 0;
 int out_trigger = 0;
 
+// 압력센서 입력을 저장
+volatile uint16_t adc_values[2];  // 두 채널의 값을 저장할 배열
+volatile uint8_t current_channel = 0;  // 현재 변환 중인 채널
 //============================ 함수 프로토타입 선언 ============================
 void RCC_Configure(void);
 void GPIO_Configure(void);
@@ -190,11 +193,13 @@ void Motor_SetSteps(int motor_index, int rotation, int direction);
 float Ultrasonic_MeasureDistance(uint8_t sensor_index);
 void Trig(uint8_t sensor_index);
 
+
 void delay(int);
 void delay_us(uint32_t);
 void SetColumnFloor(int col, int newFloor);
 void HandleCarEnter(void);
 void HandleOutTrigger(void);
+void ADC1_2_IRQHandler(void);
 
 //============================ 함수 구현부 ============================
 
@@ -354,21 +359,21 @@ void ADC_Configure(void) {
 
     // ADC1 초기화 설정
     ADC_InitStructure.ADC_Mode               = ADC_Mode_Independent;  
-    ADC_InitStructure.ADC_ScanConvMode       = DISABLE;        // 스캔 모드
-    ADC_InitStructure.ADC_ContinuousConvMode = DISABLE;        // 연속 변환
+    ADC_InitStructure.ADC_ScanConvMode       = ENABLE;        // 스캔 모드
+    ADC_InitStructure.ADC_ContinuousConvMode = ENABLE;        // 연속 변환
     ADC_InitStructure.ADC_ExternalTrigConv   = ADC_ExternalTrigConv_None;
     ADC_InitStructure.ADC_DataAlign          = ADC_DataAlign_Right;
-    ADC_InitStructure.ADC_NbrOfChannel       = 1;             // 변환할 채널 수: 2
+    ADC_InitStructure.ADC_NbrOfChannel       = 2;             // 변환할 채널 수: 2
     ADC_Init(ADC1, &ADC_InitStructure);
 
     // 채널 순서 설정
     // (Rank=1)에 PA0 -> ADC_Channel_0
     // (Rank=2)에 PA1 -> ADC_Channel_1
-    // ADC_RegularChannelConfig(ADC1, ADC_Channel_0, 1, ADC_SampleTime_71Cycles5);
-    // ADC_RegularChannelConfig(ADC1, ADC_Channel_1, 2, ADC_SampleTime_71Cycles5);
+     ADC_RegularChannelConfig(ADC1, ADC_Channel_0, 1, ADC_SampleTime_239Cycles5);
+     ADC_RegularChannelConfig(ADC1, ADC_Channel_1, 2, ADC_SampleTime_239Cycles5);
 
     // **EOC(End of Conversion) 인터럽트 활성화**
-    // ADC_ITConfig(ADC1, ADC_IT_EOC, ENABLE);
+     ADC_ITConfig(ADC1, ADC_IT_EOC, ENABLE);
 
     // ADC 활성화 및 캘리브레이션
     ADC_Cmd(ADC1, ENABLE);
@@ -378,7 +383,7 @@ void ADC_Configure(void) {
     while(ADC_GetCalibrationStatus(ADC1));
 
     // ADC 변환 시작 (연속 모드이므로 자동으로 순차 변환)
-    // ADC_SoftwareStartConvCmd(ADC1, ENABLE);
+     ADC_SoftwareStartConvCmd(ADC1, ENABLE);
 }
 
 void NVIC_Configure(void) {
@@ -609,6 +614,32 @@ void TIM2_IRQHandler(void) {
     }
 }
 
+void ADC1_2_IRQHandler(void) {
+    if (ADC_GetITStatus(ADC1, ADC_IT_EOC) != RESET) {
+        // 현재 변환된 값을 저장
+        adc_values[current_channel] = ADC_GetConversionValue(ADC1);
+
+        // 다음 채널로 이동
+        current_channel++;
+        if (current_channel >= 2) {
+            current_channel = 0; // 채널 순환
+        }
+
+        // 값에 따라 동작 수행
+        if (adc_values[0] > 600) {
+            // 채널 0 (압력 센서 1)에 대한 동작
+            enter_trigger = 1;
+            ADC_ITConfig(ADC1, ADC_IT_EOC, DISABLE);
+        }
+        if (adc_values[1] > 600) {
+            // 채널 1 (압력 센서 2)에 대한 동작
+            out_trigger = 1;
+        }
+
+        // 인터럽트 플래그 클리어
+        ADC_ClearITPendingBit(ADC1, ADC_IT_EOC);
+    }
+}
 void delay(int step){
     for (volatile int i = 0; i < step; i++);
 }
@@ -653,7 +684,7 @@ void HandleCarEnter(void)
     // 트리거 한번 처리 후에는 클리어
     
     // 각 열(col)마다 현재 1층인 행(row)를 파악
-    
+    while(enter_trigger){
       for (int col = 0; col < 3; col++)
       {
           int row = current_floor[col]; // 이 열에서 1층에 놓여있는 행
@@ -675,10 +706,10 @@ void HandleCarEnter(void)
               enter_trigger = 0;
           }
           // 한 1초 있다가 위로 올려버릴까?
-          delay(1000000);
-      
+          //delay(1000000);
     }
-    
+    }
+    ADC_ITConfig(ADC1, ADC_IT_EOC, ENABLE);
     enter_trigger = 0;
     
     // 필요하다면 "입장 감지"용 LED 깜빡임 정도만...
