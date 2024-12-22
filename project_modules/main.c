@@ -774,8 +774,6 @@ void HandleCarOut(int row_in, int col_in)
 
 //============================ 메인 함수 ============================
 int main() {
-    uint16_t adc_value_0, adc_value_1;
-  
     SystemInit();
     RCC_Configure();
     GPIO_Configure();
