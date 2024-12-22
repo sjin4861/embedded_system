@@ -173,6 +173,7 @@ void ADC_Configure(void);
 void NVIC_Configure(void);
 void EXTI_Configure(void);
 void USART1_Init(void);
+void USART2_Init(void);
 
 void LED_SetColor(uint8_t led_num, uint8_t color);
 void LED_UpdateByCarPresence(void);
@@ -180,12 +181,6 @@ void Motor_SetSteps(int motor_index, int rotation, int direction);
 
 float Ultrasonic_MeasureDistance(uint8_t sensor_index);
 void Ultrasonic_Trigger(uint8_t sensor_index);
-
-void Bluetooth_SendString(char *str);
-
-void EXTI0_IRQHandler(void);
-void EXTI1_IRQHandler(void);
-void USART1_IRQHandler(void);
 
 void delay(int);
 void delay_us(uint32_t);
@@ -239,10 +234,16 @@ void GPIO_Configure(void) {
 
     GPIO_InitStructure.GPIO_Pin = GPIO_Pin_10; // RX
     GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN_FLOATING;
+    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
     GPIO_Init(GPIOA, &GPIO_InitStructure);
 
     // USART2 TX: PD5 (AF_PP), USART2 RX: PD6 (IN_FLOATING)
+<<<<<<< HEAD
     GPIO_InitStructure.GPIO_Pin = GPIO_Pin_2;
+=======
+    GPIO_PinRemapConfig(GPIO_Remap_USART2, ENABLE);
+    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_5;
+>>>>>>> remotes/origin/bluetooth
     GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
     GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP;
     GPIO_Init(GPIOA, &GPIO_InitStructure);
@@ -525,13 +526,18 @@ uint16_t Read_ADC_Channel(uint8_t channel)
     /* 변환 결과 반환 */
     return ADC_GetConversionValue(ADC1);
 }
+<<<<<<< HEAD
 
+=======
+/*
+>>>>>>> remotes/origin/bluetooth
 void Bluetooth_SendString(char *str) {
     while (*str) {
         while (USART_GetFlagStatus(USART1, USART_FLAG_TXE) == RESET);
         USART_SendData(USART1, *str++);
     }
 }
+*/
 
 // 이런 식으로 3,4,7,8,9,10,11에 대한 EXTI 핸들러도 동일한 패턴으로 구현
 // 실제로는 각 센서 echo 핀에 맞는 EXTI_LineX를 사용해야 함
@@ -613,11 +619,19 @@ void SetColumnFloor(int col, int newFloor)
     if (diff > 0) {
         // 위로 이동
         // diff칸 이동해야 하므로 rotation = 3 * diff (예시)
+<<<<<<< HEAD
         Motor_SetSteps(col, 3 * diff, -1);
     } else {
         // 아래로 이동 (diff < 0)
         // 절댓값(-diff)만큼 칸 이동
         Motor_SetSteps(col, 3 * (-diff), 1);
+=======
+        Motor_SetSteps(col+1, 3 * diff, -1);
+    } else {
+        // 아래로 이동 (diff < 0)
+        // 절댓값(-diff)만큼 칸 이동
+        Motor_SetSteps(col+1, 3 * (-diff), 1);
+>>>>>>> remotes/origin/bluetooth
     }
     
     // 현재 층 갱신
@@ -634,15 +648,16 @@ void SetColumnFloor(int col, int newFloor)
 void HandleCarEnter(void)
 {
     // 트리거 한번 처리 후에는 클리어
-    enter_trigger = 0;
-
+    
     // 각 열(col)마다 현재 1층인 행(row)를 파악
-    for (int col = 0; col < 3; col++)
-    {
-        int row = current_floor[col]; // 이 열에서 1층에 놓여있는 행
-        // 초음파 센서 인덱스 (기존 코드에서 1~9로 매핑)
-        uint8_t sensor_index = row * 3 + (col + 1);
+    
+      for (int col = 0; col < 3; col++)
+      {
+          int row = current_floor[col]; // 이 열에서 1층에 놓여있는 행
+          // 초음파 센서 인덱스 (기존 코드에서 1~9로 매핑)
+          uint8_t sensor_index = row * 3 + (col + 1);
 
+<<<<<<< HEAD
         float distance = Ultrasonic_MeasureDistance(sensor_index);
         // 예: 5cm 이하이면 차가 들어온 것으로 간주
         if (distance < 5.0f && car_presence[row][col] == 0)
@@ -650,13 +665,25 @@ void HandleCarEnter(void)
             // 새 차 주차
             car_presence[row][col] = 1;
             printf("[Enter] Car detected at row=%d, col=%d\n", row, col);
+=======
+          float distance = Ultrasonic_MeasureDistance(sensor_index);
+          printf("row, col, distance : %d, %d, %.2f\n", row, col, distance);
+          // 예: 5cm 이하이면 차가 들어온 것으로 간주
+          if (distance < 5.0f && car_presence[row][col] == 0)
+          {
+              // 새 차 주차
+              car_presence[row][col] = 1;
+              printf("[Enter] Car detected at row=%d, col=%d\n", row, col);
+>>>>>>> remotes/origin/bluetooth
 
-            // LED 상태 갱신
-            LED_UpdateByCarPresence();
-            // 한 칸만 주차 처리 후 종료
-            break;
-        }
-        // 한 1초 있다가 위로 올려버릴까?
+              // LED 상태 갱신
+              LED_UpdateByCarPresence();
+              // 한 칸만 주차 처리 후 종료
+              enter_trigger = 0;
+          }
+          // 한 1초 있다가 위로 올려버릴까?
+          delay(1000000);
+      
     }
 }
 
@@ -767,11 +794,19 @@ int main() {
         printf("adc_value_0 : %d\n", adc_value_0);
         printf("adc_value_1 : %d\n", adc_value_1);
 
+<<<<<<< HEAD
         if (adc_value_0 > 300) {
             enter_trigger = 1;
         }
 
         if (adc_value_1 > 300) {
+=======
+        if (adc_value_0 > 400) {
+            enter_trigger = 1;
+        }
+
+        if (adc_value_1 > 400) {
+>>>>>>> remotes/origin/bluetooth
             out_trigger = 1;
         }
 
