@@ -83,9 +83,9 @@
 #define LED0_YELLOW_PIN GPIO_Pin_1
 #define LED0_RED_PIN GPIO_Pin_2
 
-#define LED1_GREEN_PIN GPIO_Pin_3
-#define LED1_YELLOW_PIN GPIO_Pin_4
-#define LED1_RED_PIN GPIO_Pin_5
+#define LED1_GREEN_PIN GPIO_Pin_13
+#define LED1_YELLOW_PIN GPIO_Pin_14
+#define LED1_RED_PIN GPIO_Pin_15
 
 #define LED2_GREEN_PIN GPIO_Pin_6
 #define LED2_YELLOW_PIN GPIO_Pin_7
@@ -193,16 +193,18 @@ void HandleOutTrigger(void);
 
 
 void RCC_Configure(void) {
-    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
+
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB, ENABLE);
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOC, ENABLE);
-    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOD, ENABLE);
+
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOE, ENABLE);
     
     // ADC1 (APB2), TIM1 (APB2)
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_ADC1, ENABLE);
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_TIM1, ENABLE);
-
+    
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOD, ENABLE);
     // USART1 (APB2), USART2 (APB1)
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_USART1, ENABLE);
     RCC_APB1PeriphClockCmd(RCC_APB1Periph_USART2, ENABLE);
@@ -229,25 +231,22 @@ void GPIO_Configure(void) {
 
     // USART1 TX (PA9), RX (PA10)
     GPIO_InitStructure.GPIO_Pin = GPIO_Pin_9;  // TX
-    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP; 
     GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP; 
     GPIO_Init(GPIOA, &GPIO_InitStructure);
 
-    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_10; // RX
-    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN_FLOATING;
-    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_10;
+    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IPU;
     GPIO_Init(GPIOA, &GPIO_InitStructure);
 
     // USART2 TX: PD5 (AF_PP), USART2 RX: PD6 (IN_FLOATING)
-    GPIO_PinRemapConfig(GPIO_Remap_USART2, ENABLE);
-    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_5;
+    GPIO_InitStructure.GPIO_Pin = GPIO_Pin_2;
     GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
     GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP;
     GPIO_Init(GPIOA, &GPIO_InitStructure);
 	
     GPIO_InitStructure.GPIO_Pin = GPIO_Pin_3;
-    GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
-    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN_FLOATING;
+    GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IPU;
     GPIO_Init(GPIOA, &GPIO_InitStructure);
 
     // 스텝모터 핀 (PE0~PE15) 모두 출력
@@ -320,13 +319,12 @@ void USART1_Init(void)
     USART_Cmd(USART1, ENABLE);
 
     USART1_InitStructure.USART_BaudRate = 9600;
-    USART1_InitStructure.USART_WordLength = USART_WordLength_8b;
-    USART1_InitStructure.USART_StopBits = USART_StopBits_1;
-    USART1_InitStructure.USART_Parity = USART_Parity_No;
-    USART1_InitStructure.USART_Mode = USART_Mode_Rx | USART_Mode_Tx;
     USART1_InitStructure.USART_HardwareFlowControl = USART_HardwareFlowControl_None;
+    USART1_InitStructure.USART_Mode = USART_Mode_Rx | USART_Mode_Tx;
+    USART1_InitStructure.USART_Parity = USART_Parity_No;
+    USART1_InitStructure.USART_StopBits = USART_StopBits_1;
+    USART1_InitStructure.USART_WordLength = USART_WordLength_8b;
     USART_Init(USART1, &USART1_InitStructure);
-
     USART_ITConfig(USART1, USART_IT_RXNE, ENABLE);
 }
 
@@ -337,13 +335,12 @@ void USART2_Init(void)
     USART_Cmd(USART2, ENABLE);
 
     USART2_InitStructure.USART_BaudRate = 9600;
-    USART2_InitStructure.USART_WordLength = USART_WordLength_8b;
-    USART2_InitStructure.USART_StopBits = USART_StopBits_1;
-    USART2_InitStructure.USART_Parity = USART_Parity_No;
-    USART2_InitStructure.USART_Mode = USART_Mode_Rx | USART_Mode_Tx;
     USART2_InitStructure.USART_HardwareFlowControl = USART_HardwareFlowControl_None;
+    USART2_InitStructure.USART_Mode = USART_Mode_Rx | USART_Mode_Tx;
+    USART2_InitStructure.USART_Parity = USART_Parity_No;
+    USART2_InitStructure.USART_StopBits = USART_StopBits_1;
+    USART2_InitStructure.USART_WordLength = USART_WordLength_8b;
     USART_Init(USART2, &USART2_InitStructure);
-
     USART_ITConfig(USART2, USART_IT_RXNE, ENABLE);
 }
 
@@ -387,20 +384,21 @@ void NVIC_Configure(void) {
     // USART1 IRQ
     NVIC_EnableIRQ(USART1_IRQn);
     NVIC_InitStructure.NVIC_IRQChannel = USART1_IRQn;
-    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0x00; 
-    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0x00;
+    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0; 
+    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
     NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
     NVIC_Init(&NVIC_InitStructure);
 
     // USART2 IRQ
     NVIC_EnableIRQ(USART2_IRQn);
     NVIC_InitStructure.NVIC_IRQChannel = USART2_IRQn;
-    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0x00; 
-    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0x00; 
+    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 1; 
+    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0; 
     NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
     NVIC_Init(&NVIC_InitStructure);
 
     // ADC1_2 IRQ
+    
     NVIC_InitStructure.NVIC_IRQChannel = ADC1_2_IRQn;
     NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0x00;
     NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0x01;
@@ -588,17 +586,7 @@ void USART2_IRQHandler() {
     if(USART_GetITStatus(USART2,USART_IT_RXNE)!=RESET){
         word = USART_ReceiveData(USART2);
         
-        // 명령 버퍼에 저장
-        if (word == '\n' || word == '\r') {
-            // 명령 종료
-            bluetooth_rx_buffer[bluetooth_rx_index] = '\0';
-            bluetooth_rx_index = 0;
-            bluetooth_command_received = 1;
-        } else {
-            if (bluetooth_rx_index < CMD_BUFFER_SIZE - 1) {
-                bluetooth_rx_buffer[bluetooth_rx_index++] = (char)word;
-            }
-        }
+
         
         // 받은 데이터를 USART1로 에코 (디버깅용)
         USART_SendData(USART1, word);
@@ -801,8 +789,24 @@ int main() {
     LED_SetColor(0, LED_COLOR_GREEN);
     LED_SetColor(1, LED_COLOR_GREEN);
     LED_SetColor(2, LED_COLOR_GREEN);
+    
+    while(1) {
+    }
 
     while(1) {
+        adc_value_0 = Read_ADC_Channel(ADC_Channel_0);
+        adc_value_1 = Read_ADC_Channel(ADC_Channel_1);
+        printf("adc_value_0 : %d\n", adc_value_0);
+        printf("adc_value_1 : %d\n", adc_value_1);
+
+        if (adc_value_0 > 600) {
+            enter_trigger = 1;
+        }
+
+        if (adc_value_1 > 600) {
+            out_trigger = 1;
+        }
+
         // 각 초음파 센서(1~9)로 거리 측정하고 일정 거리 이하면 차 있음(1), 아니면 없음(0)
         // sensor_index: 1,2,3  / 4,5,6 / 7,8,9 => 3x3
         // row = (sensor_index-1)/3, col = (sensor_index-1)%3
@@ -848,4 +852,5 @@ int main() {
         }
         delay(1000000);
     }
+    return 0;
 }
