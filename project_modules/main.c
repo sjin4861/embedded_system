@@ -102,10 +102,17 @@
 #define DISTANCE_THRESHOLD 20.0f
 #define CMD_BUFFER_SIZE 100
 
+#define CAR_DETECTION_TIME_SEC 5          
+
 // 블루투스 수신 버퍼
 volatile char bluetooth_rx_buffer[100];
 volatile uint8_t bluetooth_rx_index = 0;
 volatile uint8_t bluetooth_command_received = 0;
+
+// 차량 감지 관련 추가 전역 변수
+volatile uint8_t carDetectionActive = 0;     // 입구 감지 활성화 여부
+volatile uint8_t carDetectionCount = 0;      // 5초 측정을 위한 카운트(=TIM1_IRQHandler 횟수)
+volatile uint8_t carDetected = 0;            // 실제로 차가 감지되었는지
 
 // 주차공간 차 유무 저장 (3x3)
 // 1: 차 있음, 0: 차 없음
@@ -273,24 +280,23 @@ void GPIO_Configure(void) {
     GPIO_Init(ULTRASONIC_ECHO_PORT, &GPIO_InitStructure);
 }
 
-// 현재 분주와 period를 그냥 막 정한 상태임
+// 현재 분주와 period를 그냥 막 정한 상태 -> 1초마다 인터럽트 발생
 void TIM1_Configure(void) {
     TIM_TimeBaseInitTypeDef TIM_TimeBaseStructure;
 
     // TIM1 설정 (1μs 단위로 동작하도록 설정)
-    TIM_TimeBaseStructure.TIM_Prescaler = 72 - 1;       // 1MHz로 작동 (72MHz / 72)
+    TIM_TimeBaseStructure.TIM_Prescaler = 7200 - 1;       // 0.01MHz로 작동 (72MHz / 7200)
     TIM_TimeBaseStructure.TIM_CounterMode = TIM_CounterMode_Up; // 카운터 증가 모드
-    TIM_TimeBaseStructure.TIM_Period = 0xFFFF;          // 최대 카운터 값 (65535)
+    TIM_TimeBaseStructure.TIM_Period = 10000 - 1;          // 1초를 위해
     TIM_TimeBaseStructure.TIM_ClockDivision = TIM_CKD_DIV1; // 기본 클럭 분주 없음
     TIM_TimeBaseInit(TIM1, &TIM_TimeBaseStructure);
-
+    TIM_ITConfig(TIM1, TIM_IT_Update, ENABLE); // TIM1 업데이트 인터럽트 활성화
     TIM_Cmd(TIM1, ENABLE); // TIM1 활성화
 }
 
 void TIM2_Configure(void)
 {
     TIM_TimeBaseInitTypeDef TIM_TimeBaseStructure;
-
     // 1) RCC에서 TIM2 클록 활성화
     RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2, ENABLE);
 
@@ -310,7 +316,6 @@ void TIM2_Configure(void)
     // 4) TIM2 시작
     TIM_Cmd(TIM2, ENABLE);
 }
-
 
 void USART1_Init(void)
 {
@@ -405,6 +410,18 @@ void NVIC_Configure(void) {
     NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
     NVIC_Init(&NVIC_InitStructure);
 
+}
+
+// TIM1 인터럽트 설정
+void NVIC_TIM1_Configure(void)
+{
+    NVIC_InitTypeDef NVIC_InitStructure;
+    
+    NVIC_InitStructure.NVIC_IRQChannel = TIM1_IRQn;
+    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0; // 우선순위
+    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
+    NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+    NVIC_Init(&NVIC_InitStructure);
 }
 
 // TIM2 인터럽트 설정
@@ -597,6 +614,60 @@ void USART2_IRQHandler() {
     }
 }
 
+void TIM1_IRQHandler(void)
+{
+    if (TIM_GetITStatus(TIM1, TIM_IT_Update) != RESET)
+    {
+        TIM_ClearITPendingBit(TIM1, TIM_IT_Update);
+
+        // carDetectionActive=1 이면 차량 스캔
+        if (carDetectionActive)
+        {
+            // 아직 차를 발견하지 않았다면
+            if (!carDetected)
+            {
+                // 1층에 놓인 칸만 스캔
+                // row= current_floor[col]가 0인 col에 대해 초음파 측정
+                for (int col = 0; col < 3; col++)
+                {
+                    int row = current_floor[col];
+                    if (row == 0)
+                    {
+                        uint8_t sensor_index = (row * 3) + (col + 1); // 예: col=0 → sensor=1
+                        float dist = Ultrasonic_MeasureDistance(sensor_index);
+                        printf("[TIM1] Dist(col=%d): %.2f\n", col, dist);
+
+                        if (dist < 5.0f)
+                        {
+                            // 차량 발견 → car_presence 업데이트
+                            car_presence[row][col] = 1;
+                            printf("[TIM1] Car found at row=%d col=%d\n", row, col);
+                            carDetected = 1;
+                            // LED 갱신
+                            LED_UpdateByCarPresence();
+                            break;
+                        }
+                    }
+                }
+            }
+
+            carDetectionCount++;
+
+            // 5초 경과 or 차량 발견 시 → TIM1 중단
+            if (carDetectionCount >= CAR_DETECTION_TIME_SEC || carDetected)
+            {
+                TIM_Cmd(TIM1, DISABLE);
+                carDetectionActive = 0; 
+                printf("[TIM1] Car detection finished: reason=%s\n",
+                       (carDetected ? "CarFound" : "Timeout"));
+
+                // 여기서 필요하다면 enter_trigger=0을 확실히 해줌
+                // enter_trigger = 0;
+            }
+        }
+    }
+}
+
 void TIM2_IRQHandler(void) {
     volatile uint16_t adc_value_0 = 0, adc_value_1 = 0;
 
@@ -611,6 +682,15 @@ void TIM2_IRQHandler(void) {
         // 여기서 임계값 비교 등 간단한 처리도 할 수 있음
         if (adc_value_0 > 600) {
             enter_trigger = 1;
+            // 추가: 아직 차량 감지 동작이 진행 중이 아니라면 TIM1 시작
+            if (!carDetectionActive) {
+                carDetectionActive = 1;      // 감지 활성화
+                carDetectionCount = 0;       // 5초 카운트 초기화
+                carDetected = 0;            // 아직 차량 미감지
+                TIM_SetCounter(TIM1, 0);
+                TIM_Cmd(TIM1, ENABLE);      // TIM1 시작
+                printf("[TIM2] Start TIM1 for car detection (5s)\n");
+            }
         }
         if (adc_value_1 > 600) {
             out_trigger = 1;
@@ -662,7 +742,7 @@ void HandleCarEnter(void)
     // 트리거 한번 처리 후에는 클리어
     
     // 각 열(col)마다 현재 1층인 행(row)를 파악
-    
+    /*
       for (int col = 0; col < 3; col++)
       {
           int row = current_floor[col]; // 이 열에서 1층에 놓여있는 행
@@ -687,6 +767,11 @@ void HandleCarEnter(void)
           delay(1000000);
       
     }
+    */
+    enter_trigger = 0;
+    
+    // 필요하다면 "입장 감지"용 LED 깜빡임 정도만...
+    printf("[HandleCarEnter] Enter trigger received. Car detection will run via TIM1.\n");
 }
 
 /**
