@@ -801,7 +801,7 @@ int main() {
         }
         if (out_trigger){
             // 사람이 출구를 나가는 것이 감지가 되는 경우
-            out_trigger = 0;
+            HandleOutTrigger();
             // 모터 수직 이동, 방금 들어온 차를 보고 모터 index와 방향을 결정해야함
         }
         // 블루투스 출차 명령
