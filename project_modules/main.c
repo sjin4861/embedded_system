@@ -107,7 +107,6 @@
 // 블루투스 수신 버퍼
 volatile char bluetooth_rx_buffer[100];
 volatile uint8_t bluetooth_rx_index = 0;
-volatile uint8_t bluetooth_command_received = 0;
 
 // 차량 감지 관련 추가 전역 변수
 volatile uint8_t carDetectionActive = 0;     // 입구 감지 활성화 여부
@@ -571,19 +570,40 @@ void USART1_IRQHandler() {
 }
 // USART2 IRQ (블루투스 모듈 연결)
 void USART2_IRQHandler() {
-    uint16_t word;
-    if(USART_GetITStatus(USART2,USART_IT_RXNE)!=RESET){
+    if(USART_GetITStatus(USART2, USART_IT_RXNE)!=RESET){
         char c = USART_ReceiveData(USART2);
+
+        // 수신 버퍼 처리
         if (c == '\n' || c == '\r') {
             bluetooth_rx_buffer[bluetooth_rx_index] = '\0';
             bluetooth_rx_index = 0;
-            bluetooth_command_received = 1;
+
+            // 바로 여기서 명령 해석
+            if (strcmp(bluetooth_rx_buffer, "TEST") == 0) {
+                // 즉시 처리
+                USART1_SendString("TEST command received\r\n");
+                SetColumnFloor(0,1);
+            } else if (strncmp(bluetooth_rx_buffer, "OUT", 3) == 0) {
+                // OUT r c 파싱
+                int row_cmd, col_cmd;
+                int matches = sscanf(bluetooth_rx_buffer+3, "%d %d", &row_cmd, &col_cmd);
+                if (matches == 2) {
+                    HandleCarOut(row_cmd, col_cmd);
+                } else {
+                    USART1_SendString("[BT] Invalid OUT command format!\r\n");
+                }
+            } else {
+                // Unknown command
+                USART1_SendString("[BT] Unknown command\r\n");
+            }
         } else {
             if (bluetooth_rx_index < CMD_BUFFER_SIZE - 1) {
                 bluetooth_rx_buffer[bluetooth_rx_index++] = c;
             }
         }
-        USART_SendData(USART1, c); // PC로 에코
+
+        // PC 에코
+        USART_SendData(USART1, c); 
         USART_ClearITPendingBit(USART2, USART_IT_RXNE);    
     }
 }
@@ -651,9 +671,7 @@ void SetColumnFloor(int col, int newFloor)
 void HandleCarEnter(void)
 {
     // 트리거 한번 처리 후에는 클리어
-    
     // 각 열(col)마다 현재 1층인 행(row)를 파악
-    
       for (int col = 0; col < 3; col++)
       {
           int row = current_floor[col]; // 이 열에서 1층에 놓여있는 행
@@ -799,35 +817,6 @@ int main() {
         if (out_trigger){
             HandleOutTrigger();
             // 모터 수직 이동, 방금 들어온 차를 보고 모터 index와 방향을 결정해야함
-        }
-        // 블루투스 출차 명령
-        if (bluetooth_command_received) {
-            bluetooth_command_received = 0;
-            // 예: "OUT 1 2" → row=1, col=2 → 1-based
-            // 문자열 파싱 로직 (간단 예시)
-            // 실제론 strtok, sscanf 등 사용 가능
-            if (strncmp((char*)bluetooth_rx_buffer, "OUT", 3) == 0) 
-            {
-                // 형식: "OUT r c"
-                int row_cmd, col_cmd;
-                int matches = sscanf((char*)bluetooth_rx_buffer+3, "%d %d", &row_cmd, &col_cmd);
-                if (matches == 2) {
-                    // 예: OUT 1 1
-                    HandleCarOut(row_cmd, col_cmd);
-                }
-                else {
-                    //printf("[BT] Invalid OUT command format!\n");
-                }
-            }
-            else if (strncmp((char*)bluetooth_rx_buffer, "TEST", 4) == 0) 
-            {
-                // 임의 테스트 명령 예시
-                USART1_SendString("TEST\n");
-                SetColumnFloor(0, 1);
-            }
-            else {
-                //printf("[BT] Unknown command: %s\n", bluetooth_rx_buffer);
-            }
         }
         delay(1000000);
     }
