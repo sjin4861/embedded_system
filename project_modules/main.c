@@ -568,8 +568,6 @@ void Bluetooth_SendString(char *str) {
 }
 */
 
-// 이런 식으로 3,4,7,8,9,10,11에 대한 EXTI 핸들러도 동일한 패턴으로 구현
-// 실제로는 각 센서 echo 핀에 맞는 EXTI_LineX를 사용해야 함
 // USART1 IRQ (PC와 연결)
 void USART1_IRQHandler() {
     uint16_t word;
@@ -584,14 +582,18 @@ void USART1_IRQHandler() {
 void USART2_IRQHandler() {
     uint16_t word;
     if(USART_GetITStatus(USART2,USART_IT_RXNE)!=RESET){
-        word = USART_ReceiveData(USART2);
-        
-
-        
-        // 받은 데이터를 USART1로 에코 (디버깅용)
-        USART_SendData(USART1, word);
-
-        USART_ClearITPendingBit(USART2,USART_IT_RXNE);
+        char c = USART_ReceiveData(USART2);
+        if (c == '\n' || c == '\r') {
+            bluetooth_rx_buffer[bluetooth_rx_index] = '\0';
+            bluetooth_rx_index = 0;
+            bluetooth_command_received = 1;
+        } else {
+            if (bluetooth_rx_index < CMD_BUFFER_SIZE - 1) {
+                bluetooth_rx_buffer[bluetooth_rx_index++] = c;
+            }
+        }
+        USART_SendData(USART1, c); // PC로 에코
+        USART_ClearITPendingBit(USART2, USART_IT_RXNE);    
     }
 }
 
@@ -789,22 +791,16 @@ int main() {
     LED_SetColor(0, LED_COLOR_GREEN);
     LED_SetColor(1, LED_COLOR_GREEN);
     LED_SetColor(2, LED_COLOR_GREEN);
-    
-    delay(10000000);
 
     while(1) {
         // 각 초음파 센서(1~9)로 거리 측정하고 일정 거리 이하면 차 있음(1), 아니면 없음(0)
         // sensor_index: 1,2,3  / 4,5,6 / 7,8,9 => 3x3
         // row = (sensor_index-1)/3, col = (sensor_index-1)%3
         if (enter_trigger){
-            // 문 개방 -> 이거 안 할거임
-            enter_trigger = 0;
             // 1층에 있는 초음파 센서 트리거링
             HandleCarEnter();
         }
         if (out_trigger){
-            // 사람이 출구를 나가는 것이 감지가 되는 경우
-            out_trigger = 0;
             HandleOutTrigger();
             // 모터 수직 이동, 방금 들어온 차를 보고 모터 index와 방향을 결정해야함
         }
