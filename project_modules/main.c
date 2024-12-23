@@ -175,6 +175,7 @@ void NVIC_Configure(void);
 void EXTI_Configure(void);
 void USART1_Init(void);
 void USART2_Init(void);
+void TIM3_Configure(void);
 
 void LED_SetColor(uint8_t led_num, uint8_t color);
 void LED_UpdateByCarPresence(void);
@@ -311,6 +312,38 @@ void TIM2_Configure(void)
     TIM_Cmd(TIM2, ENABLE);
 }
 
+void TIM3_Configure(void) {
+    TIM_TimeBaseInitTypeDef TIM_TimeBaseStructure;
+
+    // 1) TIM3 클럭 활성화
+    RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM3, ENABLE);
+
+    // 2) TIM3 기본 설정
+    //    주파수: (APB1=36MHz) / (Prescaler+1) = 1kHz
+    //    Period(ARR)=1000 → 1초마다 오버플로
+    TIM_TimeBaseStructure.TIM_Prescaler = 36000 - 1;  // 프리스케일러 값
+    TIM_TimeBaseStructure.TIM_CounterMode = TIM_CounterMode_Up; 
+    TIM_TimeBaseStructure.TIM_Period = 1000 - 1;      // 1초 주기 (1kHz * 1000)
+    TIM_TimeBaseStructure.TIM_ClockDivision = TIM_CKD_DIV1; 
+    TIM_TimeBaseStructure.TIM_RepetitionCounter = 0;  // TIM3에는 사용 안 함
+    TIM_TimeBaseInit(TIM3, &TIM_TimeBaseStructure);
+
+    // 3) TIM 업데이트 이벤트(오버플로) 인터럽트 허용
+    TIM_ITConfig(TIM3, TIM_IT_Update, ENABLE);
+
+    // 4) TIM3 시작
+    TIM_Cmd(TIM3, ENABLE);
+}
+
+void NVIC_TIM3_Configure(void) {
+    NVIC_InitTypeDef NVIC_InitStructure;
+
+    NVIC_InitStructure.NVIC_IRQChannel = TIM3_IRQn;
+    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0; // 우선순위
+    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
+    NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+    NVIC_Init(&NVIC_InitStructure);
+}
 
 void USART1_Init(void)
 {
