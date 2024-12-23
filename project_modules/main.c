@@ -8,6 +8,61 @@
 #include <stdio.h>
 #include <string.h>
 
+/******************************************************************************
+ * 프로젝트 개요:
+ *  - STM32F10x 기반 주차 관리 시스템
+ *  - 초음파 센서, 압력 센서, 스텝모터, 블루투스 모듈 등 사용
+ *  - USART1(PC 연결), USART2(블루투스)
+ *  - TIM1으로 초음파 Echo 시간 측정, TIM2로 1초 주기 압력센서 폴링
+ *  - EXTI, NVIC 설정(일부 생략), ADC 사용
+ *  - car_presence[3][3]: 주차 공간 (3x3) 차량 유무
+ *  - current_floor[3]: 각 열의 현재 층(0~2)
+ ******************************************************************************/
+
+/******************************************************************************
+ * 전역 변수/매크로
+ * ---------------------------------------------------------------------------
+ * - bluetooth_rx_buffer[]: 블루투스에서 수신한 문자열 저장
+ * - bluetooth_rx_index: 수신 버퍼 인덱스
+ * - enter_trigger, out_trigger: 압력센서 임계치 넘었을 때(입구/출구) 세팅되는 플래그
+ * - car_presence[][]: 주차장 3x3 공간에 대한 차량 유무(1:차있음/0:없음)
+ * - current_floor[]: 각 열(column)이 지상0층~2층 중 어디에 있는지
+ * - Motor_SetSteps(): 스텝모터 제어
+ * - Ultrasonic_MeasureDistance(): 초음파 센서 거리 계산
+ * - HandleCarEnter(), HandleOutTrigger(): 입차/출차 처리 함수
+ * - HandleCarOut(): “OUT r c” 명령 시 차량 제거 및 모터 이동
+ * - SendCarPresenceStatus(): “SHOW” 명령 시 주차 현황을 PC/BT로 송신
+ ******************************************************************************/
+
+
+/******************************************************************************
+ * 함수: RCC_Configure(), GPIO_Configure(), ADC_Configure(), TIM1_Configure(),
+ *       TIM2_Configure(), USART1_Init(), USART2_Init(), NVIC_Configure() ...
+ * ---------------------------------------------------------------------------
+ * - 각종 주변장치를 초기화
+ * - RCC_Configure(): 클록 활성화, GPIO & USART & TIM 등에 대한 RCC 설정
+ * - GPIO_Configure(): 핀 모드 설정 (LED, 초음파 trig/echo, USART 등)
+ * - ADC_Configure(): ADC 초기화, 보정
+ * - TIM1_Configure(): TIM1을 활성화하고, overflow 인터럽트 설정 (Echo 측정용)
+ * - TIM2_Configure(): 1초 주기(오버플로)에 인터럽트 발생 → 압력센서 폴링
+ * - USART1_Init(): PC 통신용(9600bps 등)
+ * - USART2_Init(): 블루투스 통신용(9600bps 등)
+ * - NVIC_Configure(): USART1, USART2, ADC 등 우선순위 설정
+ * - NVIC_TIM2_Configure(): TIM2 인터럽트 우선순위 설정
+ ******************************************************************************/
+
+/******************************************************************************
+ * 메인 함수: main()
+ * ---------------------------------------------------------------------------
+ * 1) 시스템/주변장치 초기화 (SystemInit, RCC, GPIO, ADC, TIM1, TIM2, USART 등)
+ * 2) LED 초기 상태(GREEN)
+ * 3) 무한루프:
+ *     - if (enter_trigger) → HandleCarEnter() 입차 처리
+ *     - if (out_trigger)   → HandleOutTrigger() 출차 처리
+ *     - 간단한 delay(1000000)
+ * 4) 나머지 명령("SHOW", "TEST", "OUT")는 USART2 인터럽트에서 처리(문자열 파싱)
+ ******************************************************************************/
+
 /* =============================================================================
    하드웨어 구성 요소:
    1. 초음파 센서 11개 (3:입구, 4~14: 3x3 주차공간, 15:출구)
@@ -103,9 +158,13 @@
 #define CMD_BUFFER_SIZE 100
 
 // 블루투스 수신 버퍼
-volatile char bluetooth_rx_buffer[100];
+char bluetooth_rx_buffer[5000];
 volatile uint8_t bluetooth_rx_index = 0;
-volatile uint8_t bluetooth_command_received = 0;
+
+// 차량 감지 관련 추가 전역 변수
+volatile uint8_t carDetectionActive = 0;     // 입구 감지 활성화 여부
+volatile uint8_t carDetectionCount = 0;      // 5초 측정을 위한 카운트(=TIM1_IRQHandler 횟수)
+volatile uint8_t carDetected = 0;            // 실제로 차가 감지되었는지
 
 // 주차공간 차 유무 저장 (3x3)
 // 1: 차 있음, 0: 차 없음
@@ -189,10 +248,14 @@ void delay_us(uint32_t);
 void SetColumnFloor(int col, int newFloor);
 void HandleCarEnter(void);
 void HandleOutTrigger(void);
+void HandleCarOut(int row_in, int col_in);
+
+// USART 통신용
+void SendCarPresenceStatus(void);
+void USART_SendString(USART_TypeDef* USARTx, const char* str);
+
 
 //============================ 함수 구현부 ============================
-
-
 void RCC_Configure(void) {
 
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB, ENABLE);
@@ -274,7 +337,6 @@ void GPIO_Configure(void) {
     GPIO_Init(ULTRASONIC_ECHO_PORT, &GPIO_InitStructure);
 }
 
-// 현재 분주와 period를 그냥 막 정한 상태임
 void TIM1_Configure(void) {
     TIM_TimeBaseInitTypeDef TIM_TimeBaseStructure;
 
@@ -417,8 +479,8 @@ void NVIC_Configure(void) {
     // USART1 IRQ
     NVIC_EnableIRQ(USART1_IRQn);
     NVIC_InitStructure.NVIC_IRQChannel = USART1_IRQn;
-    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0; 
-    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
+    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 1; 
+    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 2;
     NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
     NVIC_Init(&NVIC_InitStructure);
 
@@ -433,8 +495,8 @@ void NVIC_Configure(void) {
     // ADC1_2 IRQ
     
     NVIC_InitStructure.NVIC_IRQChannel = ADC1_2_IRQn;
-    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0x00;
-    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0x01;
+    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 1;
+    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 1;
     NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
     NVIC_Init(&NVIC_InitStructure);
 
@@ -592,18 +654,14 @@ uint16_t Read_ADC_Channel(uint8_t channel)
     /* 변환 결과 반환 */
     return ADC_GetConversionValue(ADC1);
 }
-/*
-void Bluetooth_SendString(char *str) {
-    while (*str) {
-        while (USART_GetFlagStatus(USART1, USART_FLAG_TXE) == RESET);
-        USART_SendData(USART1, *str++);
-    }
-}
-*/
 
-// 이런 식으로 3,4,7,8,9,10,11에 대한 EXTI 핸들러도 동일한 패턴으로 구현
-// 실제로는 각 센서 echo 핀에 맞는 EXTI_LineX를 사용해야 함
-// USART1 IRQ (PC와 연결)
+/******************************************************************************
+ * 인터럽트: USART1_IRQHandler()
+ * ---------------------------------------------------------------------------
+ * - PC 쪽(USART1)에서 데이터가 들어올 때마다 RXNE 체크
+ * - 현재는 단순히 받은 데이터를 USART2(블루투스)로 에코
+ * - 주차 시스템 명령을 PC에서 직접 받지는 않음(필요시 로직 확장 가능)
+ ******************************************************************************/
 void USART1_IRQHandler() {
     uint16_t word;
     if(USART_GetITStatus(USART1,USART_IT_RXNE)!=RESET){
@@ -613,21 +671,130 @@ void USART1_IRQHandler() {
         USART_ClearITPendingBit(USART1,USART_IT_RXNE);
     }
 }
-// USART2 IRQ (블루투스 모듈 연결)
-void USART2_IRQHandler() {
-    uint16_t word;
-    if(USART_GetITStatus(USART2,USART_IT_RXNE)!=RESET){
-        word = USART_ReceiveData(USART2);
-        
 
-        
-        // 받은 데이터를 USART1로 에코 (디버깅용)
-        USART_SendData(USART1, word);
+/******************************************************************************
+ * 인터럽트: USART2_IRQHandler()  (블루투스)
+ * ---------------------------------------------------------------------------
+ * - 블루투스(USART2)로부터 바이트 수신 시 RXNE 플래그
+ * - '\n' or '\r' 들어오면 하나의 명령어 끝으로 보고, 문자열 파싱
+ *   1) "SHOW" → SendCarPresenceStatus() 호출(주차 현황 전송)
+ *   2) "TEST r d" → TEST 명령으로 열 r, 방향 d(+/-1) 모터 이동
+ *   3) "OUT r c"  → row=r, col=c 차량 제거 HandleCarOut(r,c)
+ * - 그 외엔 "Unknown command" or "Invalid"
+ * - PC(USART1)로도 에코
+ ******************************************************************************/
+void USART2_IRQHandler()
+{
+    if(USART_GetITStatus(USART2, USART_IT_RXNE)!=RESET){
+        char c = USART_ReceiveData(USART2);
 
-        USART_ClearITPendingBit(USART2,USART_IT_RXNE);
+        // 수신 버퍼 처리
+        if (c == '\n' || c == '\r') {
+            bluetooth_rx_buffer[bluetooth_rx_index] = '\0';
+            bluetooth_rx_index = 0;
+
+            // 여기서 명령 해석
+            if (strcmp(bluetooth_rx_buffer, "SHOW") == 0)
+            {
+                // 주차 현황 전송
+                SendCarPresenceStatus();
+            }
+            else if (strncmp(bluetooth_rx_buffer, "TEST", 4) == 0)
+            {
+                // TEST r d 형태 파싱
+                // 예: "TEST 0 1" → r=0, d=1
+                // 예: "TEST 2 -1" → r=2, d=-1
+                int col_idx, direction;
+                int matches = sscanf(bluetooth_rx_buffer + 4, "%d %d", &col_idx, &direction);
+                if (matches == 2) {
+                    // col_idx: 0,1,2
+                    // direction: +1, -1
+                    // 현 current_floor[col_idx]에서 direction만큼 이동
+                    int newFloor = current_floor[col_idx] + direction;
+                    // 범위 제한(0~2)
+                    if (newFloor < 0) newFloor = 0;
+                    else if (newFloor > 2) newFloor = 2;
+
+                    SetColumnFloor(col_idx, newFloor);
+
+                    // 메시지
+                    char msg[50];
+                    sprintf(msg, "TEST col=%d, direction=%d -> newFloor=%d\r\n",
+                            col_idx, direction, newFloor);
+                    USART_SendString(USART1, msg);
+                    USART_SendString(USART2, msg);
+                }
+            }
+            else if (strncmp(bluetooth_rx_buffer, "OUT", 3) == 0)
+            {
+                // 기존 OUT r c 처리 (핸들링 동일)
+                int row_cmd, col_cmd;
+                int matches = sscanf(bluetooth_rx_buffer+3, "%d %d", &row_cmd, &col_cmd);
+                if (matches == 2) {
+                    HandleCarOut(row_cmd, col_cmd);
+                } else {
+                    USART_SendString(USART1, "[BT] Invalid OUT command format!\r\n");
+                    USART_SendString(USART2, "[BT] Invalid OUT command format!\r\n");
+                }
+            }
+        } 
+        else {
+            // 아직 '\n' or '\r'이 아닐 때는 버퍼에 쌓음
+            if (bluetooth_rx_index < CMD_BUFFER_SIZE - 1) {
+                bluetooth_rx_buffer[bluetooth_rx_index++] = c;
+            }
+        }
+
+        // PC 에코
+        USART_SendData(USART1, c); 
+        USART_ClearITPendingBit(USART2, USART_IT_RXNE);    
     }
 }
 
+// USART로 문자열 전송 (PC, BT 겸용)
+void USART_SendString(USART_TypeDef* USARTx, const char* str)
+{
+    while (*str)
+    {
+        while (USART_GetFlagStatus(USARTx, USART_FLAG_TXE) == RESET);
+        USART_SendData(USARTx, (uint16_t)*str++);
+    }
+}
+
+/******************************************************************************
+ * 함수: SendCarPresenceStatus()
+ * ---------------------------------------------------------------------------
+ * - "SHOW" 명령 처리용
+ * - car_presence[row][col] (0~2,0~2)를 순회하여
+ *   예) Row0: 1 0 1\r\n
+ *       Row1: 0 2 0\r\n
+ *       Row2: ...
+ *   이런 식 문자열 만들고, PC(USART1), BT(USART2) 모두 전송
+ ******************************************************************************/
+void SendCarPresenceStatus(void)
+{
+    // 예: Row0: 1 0 1
+    for(int row=0; row<3; row++) {
+        char msg[50];
+        sprintf(msg, "Row%d: %d %d %d\r\n", row,
+                car_presence[row][0],
+                car_presence[row][1],
+                car_presence[row][2]);
+        // PC(USART1) 전송
+        USART_SendString(USART1, msg);
+        // BT(USART2) 전송
+        USART_SendString(USART2, msg);
+    }
+}
+
+/******************************************************************************
+ * 인터럽트: TIM2_IRQHandler()
+ * ---------------------------------------------------------------------------
+ * - 1초마다 오버플로 이벤트 → 압력센서(ADC) 값을 Read_ADC_Channel()로 읽음
+ * - adc_value_0(입구), adc_value_1(출구) > 임계값 시
+ *     → enter_trigger=1 / out_trigger=1
+ * - 이후 메인 루프에서 HandleCarEnter() / HandleOutTrigger()를 호출
+ ******************************************************************************/
 void TIM2_IRQHandler(void) {
     volatile uint16_t adc_value_0 = 0, adc_value_1 = 0;
 
@@ -654,11 +821,19 @@ void delay(int step){
 }
 
 
-/*
-* @brief  특정 열(col)을 newFloor 층(row)으로 이동시키는 함수
-*         - Motor_SetSteps(col, 3, ±1) 호출을 통해 1칸씩 이동
-*         - 2칸 이동 필요 시 3*2 = 6 스텝 등
-*/
+/******************************************************************************
+ * 함수: Motor_SetSteps(), SetColumnFloor()
+ * ---------------------------------------------------------------------------
+ * - Motor_SetSteps(motor_index, rotation, direction):
+ *     * rotation(=회전할 칸수×3등), direction(±1)
+ *     * 1칸=rotation=3(예시), total_steps=4096
+ *     * 한 스텝마다 step_sequence 인덱스에 맞춰 GPIOE에 ON/OFF → 스텝모터 회전
+ * - SetColumnFloor(col, newFloor):
+ *     * 현재층(current_floor[col])과 newFloor 차(diff) 계산
+ *     * diff>0 → 위, diff<0 → 아래
+ *     * Motor_SetSteps(col+1, 3*abs(diff), …)
+ *     * current_floor[col] = newFloor
+ ******************************************************************************/
 void SetColumnFloor(int col, int newFloor)
 {
     int diff = newFloor - current_floor[col];
@@ -681,19 +856,20 @@ void SetColumnFloor(int col, int newFloor)
     current_floor[col] = newFloor;
 }
 
-/*******************************************************
- * @brief: 입차 처리 함수
- *         1) enter_trigger = 1이면 호출
- *         2) 현재 1층에 있는 칸(=각 col의 current_floor[col])만
- *            초음파 센서로 측정하여 새 차량 등장 여부 확인
- *         3) 감지된 차 있으면 car_presence 업데이트 + LED 갱신
- ******************************************************/
+/******************************************************************************
+ * 함수: HandleCarEnter()
+ * ---------------------------------------------------------------------------
+ * - 입구 플래그(enter_trigger=1) 시 호출
+ * - current_floor[col] == 0 인 열(즉, 1층인 칸)을 초음파 센서로 측정
+ *   -> 거리가 5cm 미만이면 car_presence[row][col] = 1 로 주차 처리
+ *   -> LED_UpdateByCarPresence() 호출
+ * - 차 1대만 처리 후 종료
+ * - delay(1초) 등 간단히 블로킹 (실험용)
+ ******************************************************************************/
 void HandleCarEnter(void)
 {
     // 트리거 한번 처리 후에는 클리어
-    
     // 각 열(col)마다 현재 1층인 행(row)를 파악
-    
       for (int col = 0; col < 3; col++)
       {
           int row = current_floor[col]; // 이 열에서 1층에 놓여있는 행
@@ -701,7 +877,7 @@ void HandleCarEnter(void)
           uint8_t sensor_index = row * 3 + (col + 1);
 
           float distance = Ultrasonic_MeasureDistance(sensor_index);
-          printf("row, col, distance : %d, %d, %.2f\n", row, col, distance);
+          // printf("row, col, distance : %d, %d, %.2f\n", row, col, distance);
           // 예: 5cm 이하이면 차가 들어온 것으로 간주
           if (distance < 5.0f && car_presence[row][col] == 0)
           {
@@ -718,14 +894,21 @@ void HandleCarEnter(void)
           delay(1000000);
       
     }
+    
+    enter_trigger = 0;
+    
+    // 필요하다면 "입장 감지"용 LED 깜빡임 정도만...
+    //printf("[HandleCarEnter] Enter trigger received. Car detection will run via TIM1.\n");
 }
 
-/**
- * @brief 사람이 출구를 통해 나가는 것이 감지(out_trigger=1)된 경우 호출.
- *        - 현재 1층(지상)에 위치한 각 열(col)의 칸(row) 중,
- *          만약 해당 칸에 차량이 있다면 한 칸 위로 올린다.
- *        - 예: current_floor[col] = r, car_presence[r][col] = 1 → SetColumnFloor(col, r+1)
- */
+/******************************************************************************
+ * 함수: HandleOutTrigger()
+ * ---------------------------------------------------------------------------
+ * - 출구 플래그(out_trigger=1) 시 호출
+ * - 1층(=row=current_floor[col])에 차가 있으면 위로 한 칸 올림
+ *   (SetColumnFloor(col, row+1) 단, row<2 일 때)
+ * - LED_UpdateByCarPresence() 미사용 (원하면 추가 가능)
+ ******************************************************************************/
 void HandleOutTrigger(void)
 {
     out_trigger = 0; // 한 번 처리 후 플래그 해제
@@ -757,13 +940,14 @@ void HandleOutTrigger(void)
     }
 }
 
-/*******************************************************
- * @brief: OUT 명령 (예: "OUT 1 2")을 처리하는 함수
- *         1) row_in, col_in은 1-based 입력
- *         2) 실제 배열 인덱스는 0-based로 변환
- *         3) 그 위치에 차가 있으면, 해당 열(col)을
- *            row층으로 이동 → 차 제거 → 필요시 0층으로 복귀
- ******************************************************/
+/******************************************************************************
+ * 함수: HandleCarOut(int row_in, int col_in)
+ * ---------------------------------------------------------------------------
+ * - 블루투스 “OUT r c” 명령 처리용
+ * - row_in, col_in은 1-based → 0-based 변환
+ * - 해당 위치에 차 있으면 제거, 필요시 열을 0층으로 복귀
+ * - LED_UpdateByCarPresence()로 표시
+ ******************************************************************************/
 void HandleCarOut(int row_in, int col_in)
 {
     // 1-based -> 0-based
@@ -802,6 +986,32 @@ void HandleCarOut(int row_in, int col_in)
         printf("[OUT] No car at row=%d, col=%d\n", row, col);
     }
 }
+
+
+/******************************************************************************
+ * 메인 함수: main()
+ * ---------------------------------------------------------------------------
+ * 1) 시스템/주변장치 초기화 (SystemInit, RCC, GPIO, ADC, TIM1, TIM2, USART 등)
+ * 2) LED 초기 상태(GREEN)
+ * 3) 무한루프:
+ *     - if (enter_trigger) → HandleCarEnter() 입차 처리
+ *     - if (out_trigger)   → HandleOutTrigger() 출차 처리
+ *     - 간단한 delay(1000000)
+ * 4) 나머지 명령("SHOW", "TEST", "OUT")는 USART2 인터럽트에서 처리(문자열 파싱)
+ ******************************************************************************/
+
+
+/******************************************************************************
+ * 메인 함수: main()
+ * ---------------------------------------------------------------------------
+ * 1) 시스템/주변장치 초기화 (SystemInit, RCC, GPIO, ADC, TIM1, TIM2, USART 등)
+ * 2) LED 초기 상태(GREEN)
+ * 3) 무한루프:
+ *     - if (enter_trigger) → HandleCarEnter() 입차 처리
+ *     - if (out_trigger)   → HandleOutTrigger() 출차 처리
+ *     - 간단한 delay(1000000)
+ * 4) 나머지 명령("SHOW", "TEST", "OUT")는 USART2 인터럽트에서 처리(문자열 파싱)
+ ******************************************************************************/
 
 //============================ 메인 함수 ============================
 int main() {
@@ -854,34 +1064,6 @@ int main() {
             out_trigger = 0;
             HandleOutTrigger();
             // 모터 수직 이동, 방금 들어온 차를 보고 모터 index와 방향을 결정해야함
-        }
-        // 블루투스 출차 명령
-        if (bluetooth_command_received) {
-            bluetooth_command_received = 0;
-            // 예: "OUT 1 2" → row=1, col=2 → 1-based
-            // 문자열 파싱 로직 (간단 예시)
-            // 실제론 strtok, sscanf 등 사용 가능
-            if (strncmp((char*)bluetooth_rx_buffer, "OUT", 3) == 0) 
-            {
-                // 형식: "OUT r c"
-                int row_cmd, col_cmd;
-                int matches = sscanf((char*)bluetooth_rx_buffer+3, "%d %d", &row_cmd, &col_cmd);
-                if (matches == 2) {
-                    // 예: OUT 1 1
-                    HandleCarOut(row_cmd, col_cmd);
-                }
-                else {
-                    printf("[BT] Invalid OUT command format!\n");
-                }
-            }
-            else if (strncmp((char*)bluetooth_rx_buffer, "TEST", 4) == 0) 
-            {
-                // 임의 테스트 명령 예시
-                printf("[BT] TEST command received.\n");
-            }
-            else {
-                printf("[BT] Unknown command: %s\n", bluetooth_rx_buffer);
-            }
         }
         delay(1000000);
     }
